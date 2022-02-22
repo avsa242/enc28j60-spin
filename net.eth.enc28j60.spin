@@ -61,6 +61,19 @@ PUB ClkReady{}: status
     readreg(core#ESTAT, 1, @status)
     return ((status & 1) == 1)
 
+PUB FIFORdPtr(rxpos): curr_ptr
+' Set read position within FIFO
+'   Valid values: 0..8191
+'   Any other value polls the chip and returns the current setting
+    banksel(0)
+    case ptr
+        0..FIFO_MAX:
+            writereg(core#ERDPTL, 2, @ptr)
+        other:
+            curr_ptr := 0
+            readreg(core#ERDPTL, 2, @curr_ptr)
+            return curr_ptr
+
 PUB FIFORXEnd(rxe): curr_ptr
 ' Set ending position within FIFO for RX region
 '   Valid values: 0..8191
@@ -74,18 +87,31 @@ PUB FIFORXEnd(rxe): curr_ptr
             readreg(core#ERXNDL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFORXPos(rxpos): curr_ptr
-' Set position within FIFO for next RX operation
+PUB FIFORXRdPtr(rxrd): curr_rdpos
+' Set receive read pointer XXX clarify
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
     banksel(0)
-    case ptr
+    case rxrd
         0..FIFO_MAX:
-            writereg(core#ERDPTL, 2, @ptr)
+            writereg(core#ERXRDPTL, 2, @rxrd)
         other:
-            curr_ptr := 0
-            readreg(core#ERDPTL, 2, @curr_ptr)
-            return curr_ptr
+            curr_rdpos := 0
+            readreg(core#ERXRDPTL, 2, @curr_rdpos)
+            return curr_rdpos
+
+PUB FIFORXWrPtr(rxwr): curr_wrpos
+' Set receive write pointer XXX clarify
+'   Valid values: 0..8191
+'   Any other value polls the chip and returns the current setting
+    banksel(0)
+    case rxwr
+        0..FIFO_MAX:
+            writereg(core#ERXWRPTL, 2, @rxwr)
+        other:
+            curr_wrpos := 0
+            readreg(core#ERXWRPTL, 2, @curr_wrpos)
+            return curr_wrpos
 
 PUB FIFORXStart(rxs): curr_ptr
 ' Set starting position within FIFO for RX region
@@ -113,19 +139,6 @@ PUB FIFOTXEnd(ptr): curr_ptr
             readreg(core#ETXNDL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFOTXPtr(ptr): curr_ptr
-' Set position within FIFO for next RX operation
-'   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    banksel(0)
-    case ptr
-        0..FIFO_MAX:
-            writereg(core#EWRPTL, 2, @ptr)
-        other:
-            curr_ptr := 0
-            readreg(core#EWRPTL, 2, @curr_ptr)
-            return curr_ptr
-
 PUB FIFOTXStart(ptr): curr_ptr
 ' Set starting position within FIFO for TX region
 '   Valid values: 0..8191
@@ -137,6 +150,19 @@ PUB FIFOTXStart(ptr): curr_ptr
         other:
             curr_ptr := 0
             readreg(core#ETXSTL, 2, @curr_ptr)
+            return curr_ptr
+
+PUB FIFOWrPtr(ptr): curr_ptr
+' Set write position within FIFO
+'   Valid values: 0..8191
+'   Any other value polls the chip and returns the current setting
+    banksel(0)
+    case ptr
+        0..FIFO_MAX:
+            writereg(core#EWRPTL, 2, @ptr)
+        other:
+            curr_ptr := 0
+            readreg(core#EWRPTL, 2, @curr_ptr)
             return curr_ptr
 
 PUB Reset{}
