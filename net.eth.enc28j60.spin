@@ -235,6 +235,36 @@ PUB Reset{}
 ' Perform soft-reset
     cmd(core#SRC)
 
+PUB RXFlowCtrl(state): curr_state   'XXX tentatively named
+' Enable receive flow control
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    banksel(2)
+    case ||(state)
+        0:
+            regbits_clr(core#MACON1, core#RXPAUS_BITS)
+        1:
+            regbits_set(core#MACON1, core#RXPAUS_BITS)
+        other:
+            curr_state := 0
+            readreg(core#MACON1, 1, @curr_state)
+            return (((curr_state >> core#RXPAUS) & 1) == 1)
+
+PUB TXFlowCtrl(state): curr_state   'XXX tentatively named
+' Enable transmit flow control
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    banksel(2)
+    case ||(state)
+        0:
+            regbits_clr(core#MACON1, core#TXPAUS_BITS)
+        1:
+            regbits_set(core#MACON1, core#TXPAUS_BITS)
+        other:
+            curr_state := 0
+            readreg(core#MACON1, 1, @curr_state)
+            return (((curr_state >> core#TXPAUS) & 1) == 1)
+
 PRI bankSel(bank_nr): curr_bank
 ' Select register bank
 '   Valid values: 0..3
