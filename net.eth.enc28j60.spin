@@ -172,6 +172,21 @@ PUB FIFOWrPtr(ptr): curr_ptr
             readreg(core#EWRPTL, 2, @curr_ptr)
             return curr_ptr
 
+PUB FrameLenCheck(state): curr_state    'XXX tentatively named
+' Enable frame length checking
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    banksel(2)
+    case ||(state)
+        0:
+            regbits_clr(core#MACON3, core#FRMLNEN_BITS)
+        1:
+            regbits_set(core#MACON3, core#FRMLNEN_BITS)
+        other:
+            curr_state := 0
+            readreg(core#MACON3, 1, @curr_state)
+            return (((curr_state >> core#FRMLNEN) & 1) == 1)
+
 PUB FramePadding(mode): curr_md     'XXX tentatively named
 ' Set frame padding mode
 '   Valid values:
