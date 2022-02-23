@@ -5,7 +5,7 @@
     Description: ENC28J60-specific constants
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Feb 22, 2022
+    Updated Feb 23, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -116,6 +116,20 @@ CON
 
     { bank 2 }
     MACON1          = $00
+    MACON1_MASK     = $0F
+        TXPAUS      = 3
+        RXPAUS      = 2
+        PASSALL     = 1
+        MARXEN      = 0
+        TXPAUS_BITS = (1 << TXPAUS)
+        RXPAUS_BITS = (1 << RXPAUS)
+        PASSALL_BITS= (1 << PASSALL)
+        MARXEN_BITS = 1
+        TXPAUS_MASK = (1 << TXPAUS) ^ MACON1_MASK
+        RXPAUS_MASK = (1 << RXPAUS) ^ MACON1_MASK
+        PASSALL_MASK= (1 << PASSALL) ^ MACON1_MASK
+        MARXEN_MASK = (1 << MARXEN) ^ MACON1_MASK
+
     MACON3          = $02
     MACON4          = $03
     MABBIPG         = $04

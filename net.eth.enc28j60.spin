@@ -165,6 +165,21 @@ PUB FIFOWrPtr(ptr): curr_ptr
             readreg(core#EWRPTL, 2, @curr_ptr)
             return curr_ptr
 
+PUB MACRXEnabled(state): curr_state 'XXX tentative name
+' Enable MAC reception of frames
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    banksel(2)
+    case ||(state)
+        0:
+            regbits_clr(core#MACON1, core#MARXEN_BITS)
+        1:
+            regbits_set(core#MACON1, core#MARXEN_BITS)
+        other:
+            curr_state := 0
+            readreg(core#MACON1, 1, @curr_state)
+            return ((curr_state & 1) == 1)
+
 PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
 ' Set ethernet receive filter mask
 '   Bits: 7..0
