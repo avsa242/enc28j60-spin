@@ -61,6 +61,44 @@ PUB Stop{}
 PUB Defaults{}
 ' Set factory defaults
 
+PUB BackOff(state): curr_state  'XXX tentatively named
+' Enable backoff
+'   Valid values:
+'      *TRUE (-1 or 1): after collision, MAC will delay using
+'           Binary Exponential Backoff algorithm, before retransmitting
+'       FALSE (0): MAC after collision, MAC will immediately begin
+'           retransmitting
+'   Any other value polls the chip and returns the current setting
+    banksel(2)
+    case ||(state)
+        0:
+            regbits_set(core#MACON4, core#NOBKOFF_BITS)
+        1:
+            regbits_clr(core#MACON4, core#NOBKOFF_BITS)
+        other:
+            curr_state := 0
+            readreg(core#MACON4, 1, @curr_state)
+            return !(((curr_state >> core#NOBKOFF) & 1) == 1)
+
+PUB BackPressBackOff(state): curr_state 'XXX tentatively named
+' Enable backoff during backpressure
+'   Valid values:
+'      *TRUE (-1 or 1): after causing a collision, MAC will delay using
+'           Binary Exponential Backoff algorithm, before retransmitting
+'       FALSE (0): MAC after collision, MAC will immediately begin
+'           retransmitting
+'   Any other value polls the chip and returns the current setting
+    banksel(2)
+    case ||(state)
+        0:
+            regbits_set(core#MACON4, core#BPEN_BITS)
+        1:
+            regbits_clr(core#MACON4, core#BPEN_BITS)
+        other:
+            curr_state := 0
+            readreg(core#MACON4, 1, @curr_state)
+            return !(((curr_state >> core#BPEN) & 1) == 1)
+
 PUB ClkReady{}: status
 ' Flag indicating clock is ready
 '   Returns: TRUE (-1) or FALSE (0)
