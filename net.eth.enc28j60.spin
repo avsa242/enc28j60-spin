@@ -189,12 +189,27 @@ PUB FramePadding(mode): curr_md     'XXX tentatively named
             regbits_clr(core#MACON3, core#PADCFG_BITS)
             mode <<= core#PADCFG
             if (lookdown(mode: %001, %011, %111, %101))
-                mode |= TXCRCEN_BITS            ' mandatory for above modes
+                mode |= core#TXCRCEN_BITS       ' mandatory for above modes
             regbits_set(core#MACON3, mode)
         other:
             curr_md := 0
             readreg(core#MACON3, 1, @curr_md)
             return (curr_md >> core#PADCFG)
+
+PUB FullDuplex(state): curr_state
+' Enable full-duplex
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    banksel(2)
+    case ||(state)
+        0:
+            regbits_clr(core#MACON3, core#FULDPX_BITS)
+        1:
+            regbits_set(core#MACON3, core#FULDPX_BITS)
+        other:
+            curr_state := 0
+            readreg(core#MACON3, 1, @curr_state)
+            return ((curr_state & 1) == 1)
 
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
