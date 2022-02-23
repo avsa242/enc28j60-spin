@@ -227,15 +227,15 @@ PRI bankSel(bank_nr): curr_bank
     if (bank_nr == _curr_bank)                  ' leave the bank set as-is if
         return                                  ' it matches the last setting
 
-    curr_bank := 0
-    readreg(core#ECON1, 1, @curr_bank)
     case bank_nr
         0..3:
+            regbits_clr(core#ECON1, core#BSEL_BITS)
+            regbits_set(core#ECON1, bank_nr)
             _curr_bank := bank_nr
         other:
+            curr_bank := 0
+            readreg(core#ECON1, 1, @curr_bank)
             return (curr_bank & core#BSEL_BITS)
-    bank_nr := ((curr_bank & core#BSEL_MASK) | bank_nr)
-    writereg(core#ECON1, 1, @bank_nr)
 
 PRI cmd(cmd_nr)
 ' Send simple command
@@ -259,6 +259,20 @@ PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
             return
         other:                                  ' invalid reg_nr
             return
+
+PRI regBits_Clr(reg, field)
+' Clear bitfield 'field' in register 'reg'
+    outa[_CS] := 0
+    spi.wr_byte(core#BFC | reg)
+    spi.wr_byte(field)
+    outa[_CS] := 1
+
+PRI regBits_Set(reg, field)
+' Set bitfield 'field' in register 'reg'
+    outa[_CS] := 0
+    spi.wr_byte(core#BFS | reg)
+    spi.wr_byte(field)
+    outa[_CS] := 1
 
 PRI writeReg(reg_nr, nr_bytes, ptr_buff) | i
 ' Write nr_bytes to the device from ptr_buff
