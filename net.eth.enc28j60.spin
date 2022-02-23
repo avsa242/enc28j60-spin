@@ -271,6 +271,7 @@ PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
 '       if and/or == 0
 '           1: packets accepted if the dest addr is FF:FF:FF:FF:FF:FF
 '           0: filter disabled
+    banksel(1)
     if (mask => %0000_0000 and mask =< %1111_1111)
         writereg(core#ERXFCON, 1, @mask)
     else
