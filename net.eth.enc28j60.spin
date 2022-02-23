@@ -187,7 +187,10 @@ PUB FramePadding(mode): curr_md     'XXX tentatively named
     case mode
         %000..%111:
             regbits_clr(core#MACON3, core#PADCFG_BITS)
-            regbits_set(core#MACON3, (mode << core#PADCFG))
+            mode <<= core#PADCFG
+            if (lookdown(mode: %001, %011, %111, %101))
+                mode |= TXCRCEN_BITS            ' mandatory for above modes
+            regbits_set(core#MACON3, mode)
         other:
             curr_md := 0
             readreg(core#MACON3, 1, @curr_md)
