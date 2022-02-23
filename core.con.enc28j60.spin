@@ -131,6 +131,26 @@ CON
         MARXEN_MASK = (1 << MARXEN) ^ MACON1_MASK
 
     MACON3          = $02
+    MACON3_MASK     = $FF
+        PADCFG      = 5
+        TXCRCEN     = 4
+        PHDREN      = 3
+        HFRMEN      = 2
+        FRMLNEN     = 1
+        FULDPX      = 0
+        PADCFG_BITS = (%111 << PADCFG)
+        TXCRCEN_BITS= (1 << TXCRCEN)
+        PHDREN_BITS = (1 << PHDREN)
+        HFRMEN_BITS = (1 << HFRMEN)
+        FRMLNEN_BITS= (1 << FRMLNEN)
+        FULDPX_BITS = 1
+        PADCFG_MASK = PADCFG_BITS ^ MACON3_MASK
+        TXCRCEN_MASK= TXCRCEN_BITS ^ MACON3_MASK
+        PHDREN_MASK = PHDREN_BITS ^ MACON3_MASK
+        HFRMEN_MASK = HFRMEN_BITS ^ MACON3_MASK
+        FRMLNEN_MASK= FRMLNEN_BITS ^ MACON3_MASK
+        FULDPX_MASK = FULDPX_BITS ^ MACON3_MASK
+
     MACON4          = $03
     MABBIPG         = $04
 

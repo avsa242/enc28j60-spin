@@ -14,6 +14,13 @@ CON
 
     FIFO_MAX    = 8192-1
 
+' FramePadding() options
+    VLAN        = %101
+    PAD64       = %011
+    PAD60       = %001
+    NONE        = %000
+
+
 VAR
 
     long _CS
@@ -164,6 +171,27 @@ PUB FIFOWrPtr(ptr): curr_ptr
             curr_ptr := 0
             readreg(core#EWRPTL, 2, @curr_ptr)
             return curr_ptr
+
+PUB FramePadding(mode): curr_md     'XXX tentatively named
+' Set frame padding mode
+'   Valid values:
+'       VLAN (%101):
+'           If MAC detects VLAN protocol frame ($8100 type field),
+'               frame will be padded to 64 bytes.
+'           Otherwise, 60 bytes padding. CRC appended in both cases.
+'       PAD64 (%011, %111): all short frames padded to 64 bytes (CRC appended)
+'       PAD60 (%001): all short frames padded to 60 bytes (CRC appended)
+'       NONE (%000, %010, %100, %110): no padding of short frames
+'   Any other value polls the chip and returns the current setting
+    banksel(2)
+    case mode
+        %000..%111:
+            regbits_clr(core#MACON3, core#PADCFG_BITS)
+            regbits_set(core#MACON3, (mode << core#PADCFG))
+        other:
+            curr_md := 0
+            readreg(core#MACON3, 1, @curr_md)
+            return (curr_md >> core#PADCFG)
 
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
