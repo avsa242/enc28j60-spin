@@ -193,10 +193,17 @@ CON
         RXBUSY      = 2
         TXABRT      = 1
         CLKRDY      = 0
-        BUFER_MASK  = (1 << BUFER) ^ ESTAT_MASK
-        LATECOL_MASK= (1 << LATECOL) ^ ESTAT_MASK
-        TXABRT_MASK = (1 << TXABRT) ^ ESTAT_MASK
-        CLKRDY_MASK = (1 << CLKRDY) ^ ESTAT_MASK
+        INT_BITS    = (1 << INT)
+        BUFER_BITS  = (1 << BUFER)
+        LATECOL_BITS= (1 << LATECOL)
+        RXBUSY_BITS = (1 << RXBUSY)
+        TXABRT_BITS = (1 << TXABRT)
+        CLKRDY_BITS = 1
+        BUFER_MASK  = BUFER_BITS ^ ESTAT_MASK
+        LATECOL_MASK= LATECOL_BITS ^ ESTAT_MASK
+        RXBUSY_MASK = RXBUSY_BITS ^ ESTAT_MASK
+        TXABRT_MASK = TXABRT_BITS ^ ESTAT_MASK
+        CLKRDY_MASK = CLKRDY_BITS ^ ESTAT_MASK
 
     ECON2           = $1E
     ECON2_MASK      = $FF
@@ -210,13 +217,19 @@ CON
         TXRTS       = 3
         RXEN        = 2
         BSEL        = 0
+        TXRST_BITS  = (1 << TXRST)
+        RXRST_BITS  = (1 << RXRST)
+        DMAST_BITS  = (1 << DMAST)
+        CSUMEN_BITS = (1 << CSUMEN)
+        TXRTS_BITS  = (1 << TXRTS)
+        RXEN_BITS   = (1 << RXEN)
         BSEL_BITS   = %11
-        TXRST_MASK  = (1 << TXRST) ^ ECON1_MASK
-        RXRST_MASK  = (1 << RXRST) ^ ECON1_MASK
-        DMAST_MASK  = (1 << DMAST) ^ ECON1_MASK
-        CSUMEN_MASK = (1 << CSUMEN) ^ ECON1_MASK
-        TXRTS_MASK  = (1 << TXRTS) ^ ECON1_MASK
-        RXEN_MASK   = (1 << RXEN) ^ ECON1_MASK
+        TXRST_MASK  = TXRST_BITS ^ ECON1_MASK
+        RXRST_MASK  = RXRST_BITS ^ ECON1_MASK
+        DMAST_MASK  = DMAST_BITS ^ ECON1_MASK
+        CSUMEN_MASK = CSUMEN_BITS ^ ECON1_MASK
+        TXRTS_MASK  = TXRTS_BITS ^ ECON1_MASK
+        RXEN_MASK   = RXEN_BITS ^ ECON1_MASK
         BSEL_MASK   = BSEL_BITS ^ ECON1_MASK
 
 PUB Null{}
