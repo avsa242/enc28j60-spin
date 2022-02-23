@@ -165,6 +165,57 @@ PUB FIFOWrPtr(ptr): curr_ptr
             readreg(core#EWRPTL, 2, @curr_ptr)
             return curr_ptr
 
+PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
+' Set ethernet receive filter mask
+'   Bits: 7..0
+'   7: unicast filter enable
+'   6: and/or
+'       1: reject packets unless all enabled filters accept the packet
+'       0: accept packets unless all enabled filters reject the packet
+'   5: post-filter CRC check enabled
+'       1: discard packets with invalid CRC
+'       0: ignore CRC
+'   4: pattern match filter enable
+'       if and/or == 1
+'           1: packets discarded unless they meet pattern match criteria
+'           0: filter disabled
+'       if and/or == 0
+'           1: packets accepted if they meet pattern match criteria
+'           0: filter disabled
+'   3: magic packet filter enable
+'       if and/or == 1
+'           1: packets discarded unless they're magic packets for this MAC
+'           0: filter disabled
+'       if and/or == 0
+'           1: packets accepted if they're magic packets for this MAC
+'           0: filter disabled
+'   2: hash table filter enable
+'       if and/or == 1
+'           1: packets discarded unless they meet hash table criteria
+'           0: filter disabled
+'       if and/or == 0
+'           1: packets accepted if they meet hash table criteria
+'           0: filter disabled
+'   1: multicast filter enable
+'       if and/or == 1
+'           1: packets discarded unless the dest address LSB is set
+'           0: filter disabled
+'       if and/or == 0
+'           1: packets accepted if the dest addr LSB is set
+'           0: filter disabled
+'   0: broadcast filter enable
+'       if and/or == 1
+'           1: packets discarded unless dest addr is FF:FF:FF:FF:FF:FF
+'           0: filter disabled
+'       if and/or == 0
+'           1: packets accepted if the dest addr is FF:FF:FF:FF:FF:FF
+'           0: filter disabled
+    if (mask => %0000_0000 and mask =< %1111_1111)
+        writereg(core#ERXFCON, 1, @mask)
+    else
+        curr_mask := 0
+        readreg(core#ERXFCON, 1, @curr_mask)
+
 PUB Reset{}
 ' Perform soft-reset
     cmd(core#SRC)
