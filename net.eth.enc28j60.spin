@@ -312,6 +312,26 @@ PUB RXFlowCtrl(state): curr_state   'XXX tentatively named
             readreg(core#MACON1, 1, @curr_state)
             return (((curr_state >> core#RXPAUS) & 1) == 1)
 
+PUB TXDefer(state): curr_state  'XXX tentatively named
+' Defer transmission
+'   Valid values:
+'       TRUE (-1 or 1): MAC waits indefinitely for medium to become free
+'           if it's occupied (when attempting to transmit)
+'       FALSE (0): MAC aborts transmission after deferral limit reached
+'   Any other value polls the chip and returns the current setting
+'   NOTE: Applies _only_ when FullDuplex() == FALSE
+'   NOTE: Set to TRUE for IEEE 802.3 compliance
+    banksel(2)
+    case ||(state)
+        0:
+            regbits_clr(core#MACON4, core#DEFER_BITS)
+        1:
+            regbits_set(core#MACON4, core#DEFER_BITS)
+        other:
+            curr_state := 0
+            readreg(core#MACON4, 1, @curr_state)
+            return (((curr_state >> core#DEFER) & 1) == 1)
+
 PUB TXFlowCtrl(state): curr_state   'XXX tentatively named
 ' Enable transmit flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)

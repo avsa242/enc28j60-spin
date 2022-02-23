@@ -152,6 +152,17 @@ CON
         FULDPX_MASK = FULDPX_BITS ^ MACON3_MASK
 
     MACON4          = $03
+    MACON4_MASK     = $70
+        DEFER       = 6
+        BPEN        = 5
+        NOBKOFF     = 4
+        DEFER_BITS  = (1 << DEFER)
+        BPEN_BITS   = (1 << BPEN)
+        NOBKOFF_BITS= (1 << NOBKOFF)
+        DEFER_MASK  = DEFER_BITS ^ MACON4_MASK
+        BPEN_MASK   = BPEN_BITS ^ MACON4_MASK
+        NOBKOFF_MASK= NOBKOFF_BITS ^ MACON4_MASK
+
     MABBIPG         = $04
 
     MAIPGL          = $06
