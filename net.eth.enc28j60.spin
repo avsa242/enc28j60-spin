@@ -121,6 +121,19 @@ PUB ClkReady{}: status
     readreg(core#ESTAT, 1, @status)
     return ((status & 1) == 1)
 
+PUB CollisionWin(nr_bytes): curr_nr 'XXX tentatively named
+' Set collision window, in number of bytes
+'   Valid values: 0..63 (default: 55)
+'   Any other value polls the chip and returns the current setting
+'   NOTE: Applies only when FullDuplex() == 0
+    case nr_bytes
+        0..63:
+            writereg(core#MACLCON2, 1, @nr_bytes)
+        other:
+            curr_nr := 0
+            readreg(core#MACLCON2, 1, @curr_nr)
+            return
+
 PUB FIFORdPtr(rxpos): curr_ptr
 ' Set read position within FIFO
 '   Valid values: 0..8191
@@ -330,6 +343,7 @@ PUB MaxRetransmits(max_nr): curr_max
 ' Set maximum number of retransmissions
 '   Valid values: 0..15 (default: 15)
 '   Any other value polls the chip and returns the current setting
+'   NOTE: Applies only when FullDuplex() == 0
     case max_nr
         0..15:
             writereg(core#MACLCON1, 1, @max_nr)
