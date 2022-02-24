@@ -5,7 +5,7 @@
     Description: ENC28J60-specific constants
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Feb 23, 2022
+    Updated Feb 24, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -20,80 +20,93 @@ CON
     DEVID_RESP      = $00                       ' device ID expected response
 
 { Instruction set }
-'           opcode____ ______address            ' data
-'                  ||| |||||
-    RD_CTRL     = %000_00000                    ' n/a
-    RD_BUFF     = %001_11010                    ' n/a
-    WR_CTRL     = %010_00000                    ' byte 1 ...
-    WR_BUFF     = %011_11010                    ' byte 1 ...
-    BFS         = %100_00000                    ' byte 1 ...
-    BFC         = %101_00000                    ' byte 1 ...
-    SRC         = %111_11111                    ' n/a
+'               opcode____ ______address        ' data
+'                      ||| |||||
+    RD_CTRL         = %000_00000                ' n/a
+    RD_BUFF         = %001_11010                ' n/a
+    WR_CTRL         = %010_00000                ' byte 1 ...
+    WR_BUFF         = %011_11010                ' byte 1 ...
+    BFS             = %100_00000                ' byte 1 ...
+    BFC             = %101_00000                ' byte 1 ...
+    SRC             = %111_11111                ' n/a
 
 { Register definitions }
+    BANK            = 1
+    TYPE            = 2
+
+    ETH             = 0
+    MAC             = 1 << (TYPE * 8)
+    MII             = 2 << (TYPE * 8)
+    PHY             = 3 << (TYPE * 8)
+
+    B0              = 0
+    B1              = 1 << (BANK * 8)
+    B2              = 2 << (BANK * 8)
+    B3              = 3 << (BANK * 8)
+
     { bank 0 }
-    ERDPTL          = $00
-    ERDPTH          = $01
+    ERDPTL          = ETH | B0 | $00
+    ERDPTH          = ETH | B0 | $01
 
-    EWRPTL          = $02
-    EWRPTH          = $03
+    EWRPTL          = ETH | B0 | $02
+    EWRPTH          = ETH | B0 | $03
 
-    ETXSTL          = $04
-    ETXSTH          = $05
+    ETXSTL          = ETH | B0 | $04
+    ETXSTH          = ETH | B0 | $05
 
-    ETXNDL          = $06
-    ETXNDH          = $07
+    ETXNDL          = ETH | B0 | $06
+    ETXNDH          = ETH | B0 | $07
 
-    ERXSTL          = $08
-    ERXSTH          = $09
+    ERXSTL          = ETH | B0 | $08
+    ERXSTH          = ETH | B0 | $09
 
-    ERXNDL          = $0A
-    ERXNDH          = $0B
+    ERXNDL          = ETH | B0 | $0A
+    ERXNDH          = ETH | B0 | $0B
 
-    ERXRDPTL        = $0C
-    ERXRDPTH        = $0D
+    ERXRDPTL        = ETH | B0 | $0C
+    ERXRDPTH        = ETH | B0 | $0D
 
-    ERXWRPTL        = $0E
-    ERXWRPTH        = $0F
+    ERXWRPTL        = ETH | B0 | $0E
+    ERXWRPTH        = ETH | B0 | $0F
 
-    EDMASTL         = $10
-    EDMASTH         = $11
+    EDMASTL         = ETH | B0 | $10
+    EDMASTH         = ETH | B0 | $11
 
-    EDMANDL         = $12
-    EDMANDH         = $13
+    EDMANDL         = ETH | B0 | $12
+    EDMANDH         = ETH | B0 | $13
 
-    EDMADSTL        = $14
-    EDMADSTH        = $15
+    EDMADSTL        = ETH | B0 | $14
+    EDMADSTH        = ETH | B0 | $15
 
-    EDMACSL         = $16
-    EDMACSH         = $17
+    EDMACSL         = ETH | B0 | $16
+    EDMACSH         = ETH | B0 | $17
 
     { bank 1 }
-    EHT0            = $00
-    EHT1            = $01
-    EHT2            = $02
-    EHT3            = $03
-    EHT4            = $04
-    EHT5            = $05
-    EHT6            = $06
-    EHT7            = $07
+    EHT0            = ETH | B1 | $00
+    EHT1            = ETH | B1 | $01
+    EHT2            = ETH | B1 | $02
+    EHT3            = ETH | B1 | $03
+    EHT4            = ETH | B1 | $04
+    EHT5            = ETH | B1 | $05
+    EHT6            = ETH | B1 | $06
+    EHT7            = ETH | B1 | $07
 
-    EPMM0           = $08
-    EPMM1           = $09
-    EPMM2           = $0A
-    EPMM3           = $0B
-    EPMM4           = $0C
-    EPMM5           = $0D
-    EPMM6           = $0E
-    EPMM7           = $0F
+    EPMM0           = ETH | B1 | $08
+    EPMM1           = ETH | B1 | $09
+    EPMM2           = ETH | B1 | $0A
+    EPMM3           = ETH | B1 | $0B
+    EPMM4           = ETH | B1 | $0C
+    EPMM5           = ETH | B1 | $0D
+    EPMM6           = ETH | B1 | $0E
+    EPMM7           = ETH | B1 | $0F
 
-    EPMCSL          = $10
-    EPMCSH          = $11
+    EPMCSL          = ETH | B1 | $10
+    EPMCSH          = ETH | B1 | $11
 
-    EPMOL           = $14
-    EPMOH           = $15
+    EPMOL           = ETH | B1 | $14
+    EPMOH           = ETH | B1 | $15
 
-    ERXFCON         = $18
+    ERXFCON         = ETH | B1 | $18
     ERXFCON_MASK    = $FF
         UCEN        = 7
         ANDOR       = 6
@@ -112,10 +125,10 @@ CON
         MCEN_MASK   = (1 << MCEN) ^ ERXFCON_MASK
         BCEN_MASK   = (1 << BCEN) ^ ERXFCON_MASK
 
-    EPKTCNT         = $19
+    EPKTCNT         = ETH | B1 | $19
 
     { bank 2 }
-    MACON1          = $00
+    MACON1          = MAC | B2 | $00
     MACON1_MASK     = $0F
         TXPAUS      = 3
         RXPAUS      = 2
@@ -125,12 +138,12 @@ CON
         RXPAUS_BITS = (1 << RXPAUS)
         PASSALL_BITS= (1 << PASSALL)
         MARXEN_BITS = 1
-        TXPAUS_MASK = (1 << TXPAUS) ^ MACON1_MASK
-        RXPAUS_MASK = (1 << RXPAUS) ^ MACON1_MASK
-        PASSALL_MASK= (1 << PASSALL) ^ MACON1_MASK
-        MARXEN_MASK = (1 << MARXEN) ^ MACON1_MASK
+        TXPAUS_MASK = TXPAUS_BITS ^ MACON1_MASK
+        RXPAUS_MASK = RXPAUS_BITS ^ MACON1_MASK
+        PASSALL_MASK= PASSALL_BITS ^ MACON1_MASK
+        MARXEN_MASK = MARXEN_BITS ^ MACON1_MASK
 
-    MACON3          = $02
+    MACON3          = MAC | B2 | $02
     MACON3_MASK     = $FF
         PADCFG      = 5
         TXCRCEN     = 4
@@ -151,7 +164,7 @@ CON
         FRMLNEN_MASK= FRMLNEN_BITS ^ MACON3_MASK
         FULDPX_MASK = FULDPX_BITS ^ MACON3_MASK
 
-    MACON4          = $03
+    MACON4          = MAC | B2 | $03
     MACON4_MASK     = $70
         DEFER       = 6
         BPEN        = 5
@@ -163,60 +176,60 @@ CON
         BPEN_MASK   = BPEN_BITS ^ MACON4_MASK
         NOBKOFF_MASK= NOBKOFF_BITS ^ MACON4_MASK
 
-    MABBIPG         = $04
+    MABBIPG         = MAC | B2 | $04
 
-    MAIPGL          = $06
-    MAIPGH          = $07
+    MAIPGL          = MAC | B2 | $06
+    MAIPGH          = MAC | B2 | $07
 
-    MACLCON1        = $08
-    MACLCON2        = $09
+    MACLCON1        = MAC | B2 | $08
+    MACLCON2        = MAC | B2 | $09
 
-    MAMXFLL         = $0A
-    MAMXFLH         = $0B
+    MAMXFLL         = MAC | B2 | $0A
+    MAMXFLH         = MAC | B2 | $0B
 
-    MICMD           = $12
+    MICMD           = MII | B2 | $12
 
-    MIREGADR        = $14
+    MIREGADR        = MII | B2 | $14
 
-    MIWRL           = $16
-    MIWRH           = $17
+    MIWRL           = MII | B2 | $16
+    MIWRH           = MII | B2 | $17
 
-    MIRDL           = $18
-    MIRDH           = $19
+    MIRDL           = MII | B2 | $18
+    MIRDH           = MII | B2 | $19
 
     { bank 3 }
-    MAADR5          = $00
-    MAADR6          = $01
-    MAADR3          = $02
-    MAADR4          = $03
-    MAADR1          = $04
-    MAADR2          = $05
+    MAADR5          = MAC | B3 | $00
+    MAADR6          = MAC | B3 | $01
+    MAADR3          = MAC | B3 | $02
+    MAADR4          = MAC | B3 | $03
+    MAADR1          = MAC | B3 | $04
+    MAADR2          = MAC | B3 | $05
 
-    EBSTSD          = $06
+    EBSTSD          = ETH | B3 | $06
 
-    EBSTCON         = $07
+    EBSTCON         = ETH | B3 | $07
 
-    EBSTCSL         = $08
-    EBSTCSH         = $09
+    EBSTCSL         = ETH | B3 | $08
+    EBSTCSH         = ETH | B3 | $09
 
-    MISTAT          = $0A
+    MISTAT          = MII | B3 | $0A
 
-    EREVID          = $12
+    EREVID          = ETH | B3 | $12
 
-    ECOCON          = $15
+    ECOCON          = ETH | B3 | $15
 
-    EFLOCON         = $17
+    EFLOCON         = ETH | B3 | $17
 
-    EPAUSL          = $18
-    EPAUSH          = $19
+    EPAUSL          = ETH | B3 | $18
+    EPAUSH          = ETH | B3 | $19
 
 
 { bank-agnostic regs }
-    EIE             = $1B
+    EIE             = ETH | $1B
 
-    EIR             = $1C
+    EIR             = ETH | $1C
 
-    ESTAT           = $1D
+    ESTAT           = ETH | $1D
     ESTAT_MASK      = $D7
         INT         = 7
         BUFER       = 6
@@ -236,10 +249,10 @@ CON
         TXABRT_MASK = TXABRT_BITS ^ ESTAT_MASK
         CLKRDY_MASK = CLKRDY_BITS ^ ESTAT_MASK
 
-    ECON2           = $1E
+    ECON2           = ETH | $1E
     ECON2_MASK      = $FF
 
-    ECON1           = $1F
+    ECON1           = ETH | $1F
     ECON1_MASK      = $FF
         TXRST       = 7
         RXRST       = 6

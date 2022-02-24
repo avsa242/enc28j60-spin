@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Feb 22, 2022
+    Updated Feb 24, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -44,6 +44,7 @@ PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
             _CS := CS_PIN                       ' copy i/o pin to hub var
             outa[_CS] := 1
             dira[_CS] := 1
+            _curr_bank := -1
 
             repeat until clkready{}
             reset
@@ -69,16 +70,16 @@ PUB BackOff(state): curr_state  'XXX tentatively named
 '       FALSE (0): MAC after collision, MAC will immediately begin
 '           retransmitting
 '   Any other value polls the chip and returns the current setting
-    banksel(2)
+    curr_state := 0
+    readreg(core#MACON4, 1, @curr_state)
     case ||(state)
         0:
-            regbits_set(core#MACON4, core#NOBKOFF_BITS)
-        1:
-            regbits_clr(core#MACON4, core#NOBKOFF_BITS)
+            state := ||(state) << core#NOBKOFF
         other:
-            curr_state := 0
-            readreg(core#MACON4, 1, @curr_state)
             return !(((curr_state >> core#NOBKOFF) & 1) == 1)
+
+    state := ((curr_state & core#NOBKOFF_MASK) | state)
+    writereg(core#MACON4, 1, @state)
 
 PUB BackPressBackOff(state): curr_state 'XXX tentatively named
 ' Enable backoff during backpressure
@@ -88,16 +89,16 @@ PUB BackPressBackOff(state): curr_state 'XXX tentatively named
 '       FALSE (0): MAC after collision, MAC will immediately begin
 '           retransmitting
 '   Any other value polls the chip and returns the current setting
-    banksel(2)
+    curr_state := 0
+    readreg(core#MACON4, 1, @curr_state)
     case ||(state)
         0:
-            regbits_set(core#MACON4, core#BPEN_BITS)
-        1:
-            regbits_clr(core#MACON4, core#BPEN_BITS)
+            state := ||(state) << core#BPEN
         other:
-            curr_state := 0
-            readreg(core#MACON4, 1, @curr_state)
             return !(((curr_state >> core#BPEN) & 1) == 1)
+
+    state := ((curr_state & core#BPEN_MASK) | state)
+    writereg(core#MACON4, 1, @state)
 
 PUB ClkReady{}: status
 ' Flag indicating clock is ready
@@ -110,7 +111,6 @@ PUB FIFORdPtr(rxpos): curr_ptr
 ' Set read position within FIFO
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    banksel(0)
     case ptr
         0..FIFO_MAX:
             writereg(core#ERDPTL, 2, @ptr)
@@ -123,7 +123,6 @@ PUB FIFORXEnd(rxe): curr_ptr
 ' Set ending position within FIFO for RX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    banksel(0)
     case rxe
         0..FIFO_MAX:
             writereg(core#ERXNDL, 2, @rxe)
@@ -136,7 +135,6 @@ PUB FIFORXRdPtr(rxrd): curr_rdpos
 ' Set receive read pointer XXX clarify
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    banksel(0)
     case rxrd
         0..FIFO_MAX:
             writereg(core#ERXRDPTL, 2, @rxrd)
@@ -149,7 +147,6 @@ PUB FIFORXWrPtr(rxwr): curr_wrpos
 ' Set receive write pointer XXX clarify
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    banksel(0)
     case rxwr
         0..FIFO_MAX:
             writereg(core#ERXWRPTL, 2, @rxwr)
@@ -162,7 +159,6 @@ PUB FIFORXStart(rxs): curr_ptr
 ' Set starting position within FIFO for RX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    banksel(0)
     case rxs
         0..FIFO_MAX:
             writereg(core#ERXSTL, 2, @rxs)
@@ -175,7 +171,6 @@ PUB FIFOTXEnd(ptr): curr_ptr
 ' Set starting position within FIFO for TX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    banksel(0)
     case ptr
         0..FIFO_MAX:
             writereg(core#ETXNDL, 2, @ptr)
@@ -188,7 +183,6 @@ PUB FIFOTXStart(ptr): curr_ptr
 ' Set starting position within FIFO for TX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    banksel(0)
     case ptr
         0..FIFO_MAX:
             writereg(core#ETXSTL, 2, @ptr)
@@ -201,7 +195,6 @@ PUB FIFOWrPtr(ptr): curr_ptr
 ' Set write position within FIFO
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    banksel(0)
     case ptr
         0..FIFO_MAX:
             writereg(core#EWRPTL, 2, @ptr)
@@ -214,18 +207,18 @@ PUB FrameLenCheck(state): curr_state    'XXX tentatively named
 ' Enable frame length checking
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
-    banksel(2)
+    curr_state := 0
+    readreg(core#MACON3, 1, @curr_state)
     case ||(state)
-        0:
-            regbits_clr(core#MACON3, core#FRMLNEN_BITS)
-        1:
-            regbits_set(core#MACON3, core#FRMLNEN_BITS)
+        0, 1:
+            state := ||(state) << core#FRMLNEN
         other:
-            curr_state := 0
-            readreg(core#MACON3, 1, @curr_state)
             return (((curr_state >> core#FRMLNEN) & 1) == 1)
 
-PUB FramePadding(mode): curr_md     'XXX tentatively named
+    state := ((curr_state & core#FRMLNEN_MASK) | state)
+    writereg(core#MACON3, 1, @state)
+
+PUB FramePadding(mode): curr_md | txcrcen    'XXX tentatively named
 ' Set frame padding mode
 '   Valid values:
 '       VLAN (%101):
@@ -236,48 +229,62 @@ PUB FramePadding(mode): curr_md     'XXX tentatively named
 '       PAD60 (%001): all short frames padded to 60 bytes (CRC appended)
 '       NONE (%000, %010, %100, %110): no padding of short frames
 '   Any other value polls the chip and returns the current setting
-    banksel(2)
+    curr_md := txcrcen := 0
+    readreg(core#MACON3, 1, @curr_md)
     case mode
         %000..%111:
-            regbits_clr(core#MACON3, core#PADCFG_BITS)
             mode <<= core#PADCFG
+            { if mode is any of the four below, appending of CRC to all
+                frames is required - set the TXCRCEN bit}
             if (lookdown(mode: %001, %011, %111, %101))
-                mode |= core#TXCRCEN_BITS       ' mandatory for above modes
-            regbits_set(core#MACON3, mode)
+                txcrcen := core#TXCRCEN_BITS
         other:
-            curr_md := 0
-            readreg(core#MACON3, 1, @curr_md)
             return (curr_md >> core#PADCFG)
+
+    mode := ((curr_md & core#PADCFG_MASK) | mode) | txcrcen
+    writereg(core#MACON3, 1, @mode)
 
 PUB FullDuplex(state): curr_state
 ' Enable full-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
-    banksel(2)
+    curr_state := 0
+    readreg(core#MACON3, 1, @curr_state)
     case ||(state)
-        0:
-            regbits_clr(core#MACON3, core#FULDPX_BITS)
-        1:
-            regbits_set(core#MACON3, core#FULDPX_BITS)
+        0, 1:
+            state := ||(state)
         other:
-            curr_state := 0
-            readreg(core#MACON3, 1, @curr_state)
             return ((curr_state & 1) == 1)
+
+    state := ((curr_state & core#FULDPX_MASK) | state)
+    writereg(core#MACON3, 1, @state)
 
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
-    banksel(2)
+    curr_state := 0
+    readreg(core#MACON1, 1, @curr_state)
     case ||(state)
-        0:
-            regbits_clr(core#MACON1, core#MARXEN_BITS)
-        1:
-            regbits_set(core#MACON1, core#MARXEN_BITS)
+        0, 1:
+            state := ||(state)
         other:
-            curr_state := 0
-            readreg(core#MACON1, 1, @curr_state)
             return ((curr_state & 1) == 1)
+
+    state := ((curr_state & core#MARXEN_MASK) | state)
+    writereg(core#MACON1, 1, @state)
+
+PUB MaxFrameLen(len): curr_len
+' Set maximum frame length
+'   Valid values: 0..65535
+'   Any other value polls the chip and returns the current setting
+    case len
+        0..65535:
+            writereg(core#MAMXFLL, 2, @len)
+        other:
+            curr_len := 0
+            readreg(core#MAMXFLL, 2, @curr_len)
+            return curr_len
 
 PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
 ' Set ethernet receive filter mask
@@ -324,7 +331,6 @@ PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
 '       if and/or == 0
 '           1: packets accepted if the dest addr is FF:FF:FF:FF:FF:FF
 '           0: filter disabled
-    banksel(1)
     if (mask => %0000_0000 and mask =< %1111_1111)
         writereg(core#ERXFCON, 1, @mask)
     else
@@ -339,16 +345,16 @@ PUB RXFlowCtrl(state): curr_state   'XXX tentatively named
 ' Enable receive flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
-    banksel(2)
+    curr_state := 0
+    readreg(core#MACON1, 1, @curr_state)
     case ||(state)
-        0:
-            regbits_clr(core#MACON1, core#RXPAUS_BITS)
-        1:
-            regbits_set(core#MACON1, core#RXPAUS_BITS)
+        0, 1:
+            state := ||(state) << core#RXPAUS
         other:
-            curr_state := 0
-            readreg(core#MACON1, 1, @curr_state)
             return (((curr_state >> core#RXPAUS) & 1) == 1)
+
+    state := ((curr_state & core#RXPAUS_MASK) | state)
+    writereg(core#MACON1, 1, @state)
 
 PUB TXDefer(state): curr_state  'XXX tentatively named
 ' Defer transmission
@@ -359,31 +365,31 @@ PUB TXDefer(state): curr_state  'XXX tentatively named
 '   Any other value polls the chip and returns the current setting
 '   NOTE: Applies _only_ when FullDuplex() == FALSE
 '   NOTE: Set to TRUE for IEEE 802.3 compliance
-    banksel(2)
+    curr_state := 0
+    readreg(core#MACON4, 1, @curr_state)
     case ||(state)
-        0:
-            regbits_clr(core#MACON4, core#DEFER_BITS)
-        1:
-            regbits_set(core#MACON4, core#DEFER_BITS)
+        0, 1:
+            state := ||(state) << core#DEFER
         other:
-            curr_state := 0
-            readreg(core#MACON4, 1, @curr_state)
             return (((curr_state >> core#DEFER) & 1) == 1)
+
+    state := ((curr_state & core#DEFER_MASK) | state)
+    writereg(core#MACON4, 1, @state)
 
 PUB TXFlowCtrl(state): curr_state   'XXX tentatively named
 ' Enable transmit flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
-    banksel(2)
+    curr_state := 0
+    readreg(core#MACON1, 1, @curr_state)
     case ||(state)
-        0:
-            regbits_clr(core#MACON1, core#TXPAUS_BITS)
-        1:
-            regbits_set(core#MACON1, core#TXPAUS_BITS)
+        0, 1:
+            state := ||(state) << core#TXPAUS
         other:
-            curr_state := 0
-            readreg(core#MACON1, 1, @curr_state)
             return (((curr_state >> core#TXPAUS) & 1) == 1)
+
+    state := ((curr_state & core#TXPAUS_MASK) | state)
+    writereg(core#MACON1, 1, @state)
 
 PRI bankSel(bank_nr): curr_bank
 ' Select register bank
@@ -412,18 +418,47 @@ PRI cmd(cmd_nr)
         other:
             return
 
+CON
+
+    BANK    = 1
+    TYPE    = 2
+
+    ETH     = 0
+    MAC     = 1
+    MII     = 2
+    PHY     = 3
+
 PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
 ' Read nr_bytes from the device into ptr_buff
-    case reg_nr                                 ' validate register num
-        $00..$19, $1b..$1f:
-            repeat i from 0 to nr_bytes-1
-                outa[_CS] := 0
-                spi.wr_byte(core#RD_CTRL | reg_nr+i)
-                byte[ptr_buff][i] := spi.rd_byte{}
-                outa[_CS] := 1
-            return
-        other:                                  ' invalid reg_nr
-            return
+    banksel(reg_nr.byte[BANK])
+    case reg_nr.byte[TYPE]
+        ETH:                                    ' Ethernet regs
+            case reg_nr.byte[0]                         ' validate register num
+                $00..$19, $1b..$1f:
+                    repeat i from 0 to nr_bytes-1
+                        outa[_CS] := 0
+                        spi.wr_byte(core#RD_CTRL | reg_nr.byte[0]+i)
+                        byte[ptr_buff][i] := spi.rd_byte{}
+                        outa[_CS] := 1
+                    return
+                other:                          ' invalid reg_nr
+                    return
+        MAC, MII:                               ' MAC or MII regs
+            if reg_nr.byte[0] == $00
+                outa[11] := 0
+                dira[11] := 1
+            case reg_nr.byte[0]
+                $00..$19, $1b..$1f:
+                    repeat i from 0 to nr_bytes-1
+                        outa[_CS] := 0
+                        spi.wr_byte(core#RD_CTRL | reg_nr.byte[0]+i)
+                        spi.rd_byte{}           ' dummy read (required)
+                        byte[ptr_buff][i] := spi.rd_byte{}
+                        outa[_CS] := 1
+                    return
+                other:
+                    return
+        PHY:                                    ' PHY regs
 
 PRI regBits_Clr(reg, field)
 ' Clear bitfield 'field' in register 'reg'
@@ -441,13 +476,19 @@ PRI regBits_Set(reg, field)
 
 PRI writeReg(reg_nr, nr_bytes, ptr_buff) | i
 ' Write nr_bytes to the device from ptr_buff
-    case reg_nr
-        $00..$19, $1b..$1f:
-            repeat i from 0 to nr_bytes-1
-                outa[_CS] := 0
-                spi.wr_byte(core#WR_CTRL | reg_nr+i)
-                spi.wr_byte(byte[ptr_buff][i])
-                outa[_CS] := 1
+    banksel(reg_nr.byte[BANK])
+    case reg_nr.byte[TYPE]
+        ETH, MAC, MII:                                    ' Ethernet regs
+            case reg_nr.byte[0]
+                $00..$19, $1b..$1f:
+                    repeat i from 0 to nr_bytes-1
+                        outa[_CS] := 0
+                        spi.wr_byte(core#WR_CTRL | reg_nr.byte[0]+i)
+                        spi.wr_byte(byte[ptr_buff][i])
+                        outa[_CS] := 1
+                other:
+                    return
+        PHY:                                    ' PHY regs
         other:
             return
 
