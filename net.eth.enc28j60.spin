@@ -326,6 +326,17 @@ PUB MaxFrameLen(len): curr_len
             readreg(core#MAMXFLL, 2, @curr_len)
             return curr_len
 
+PUB MaxRetransmits(max_nr): curr_max
+' Set maximum number of retransmissions
+'   Valid values: 0..15 (default: 15)
+'   Any other value polls the chip and returns the current setting
+    case max_nr
+        0..15:
+            writereg(core#MACLCON1, 1, @max_nr)
+        other:
+            curr_max := 0
+            readreg(core#MACLCON1, 1, @curr_max)
+
 PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
 ' Set ethernet receive filter mask
 '   Bits: 7..0
