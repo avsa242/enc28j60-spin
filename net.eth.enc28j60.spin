@@ -286,6 +286,19 @@ PUB InterPktGap(dly): curr_dly  'XXX tentatively named
             readreg(core#MAIPGL, 1, @curr_dly)
             return
 
+PUB InterPktGapHDX(dly): curr_dly  'XXX tentatively named
+' Set inter-packet gap delay for _non_-back-to-back packets (for half-duplex)
+'   Valid values: 0..127
+'   Any other value polls the chip and returns the current setting
+'   NOTE: Recommended setting is $0C
+    case dly
+        0..127:
+            writereg(core#MAIPGH, 1, @dly)
+        other:
+            curr_dly := 0
+            readreg(core#MAIPGH, 1, @curr_dly)
+            return
+
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
 '   Valid values: TRUE (-1 or 1), FALSE (0)
