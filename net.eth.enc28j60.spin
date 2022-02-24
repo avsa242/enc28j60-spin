@@ -62,6 +62,20 @@ PUB Stop{}
 PUB Defaults{}
 ' Set factory defaults
 
+PUB B2BInterPktGap(dly): curr_dly  'XXX tentatively named
+' Set inter-packet gap delay for back-to-back packets
+'   Valid values: 0..127
+'   Any other value polls the chip and returns the current setting
+'   NOTE: When FullDuplex() == 1, recommended setting is $15
+'       When FullDuplex() == 0, recommended setting is $12
+    case dly
+        0..127:
+            writereg(core#MABBIPG, 1, @dly)
+        other:
+            curr_dly := 0
+            readreg(core#MABBIPG, 1, @curr_dly)
+            return
+
 PUB BackOff(state): curr_state  'XXX tentatively named
 ' Enable backoff
 '   Valid values:
@@ -260,17 +274,16 @@ PUB FullDuplex(state): curr_state
     writereg(core#MACON3, 1, @state)
 
 PUB InterPktGap(dly): curr_dly  'XXX tentatively named
-' Set inter-packet gap delay for back-to-back packets
+' Set inter-packet gap delay for _non_-back-to-back packets
 '   Valid values: 0..127
 '   Any other value polls the chip and returns the current setting
-'   NOTE: When FullDuplex() == 1, recommended setting is $15
-'       When FullDuplex() == 0, recommended setting is $12
+'   NOTE: Recommended setting is $12
     case dly
         0..127:
-            writereg(core#MABBIPG, 1, @dly)
+            writereg(core#MAIPGL, 1, @dly)
         other:
             curr_dly := 0
-            readreg(core#MABBIPG, 1, @curr_dly)
+            readreg(core#MAIPGL, 1, @curr_dly)
             return
 
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
