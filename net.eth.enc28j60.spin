@@ -286,6 +286,16 @@ PUB FullDuplex(state): curr_state
     state := ((curr_state & core#FULDPX_MASK) | state)
     writereg(core#MACON3, 1, @state)
 
+PUB GetNodeAddress(ptr_addr)
+' Get this node's currently set MAC address
+'   NOTE: Buffer pointed to by ptr_addr must be 6 bytes long
+    readreg(core#MAADR6, 1, ptr_addr)
+    readreg(core#MAADR5, 1, ptr_addr+1)
+    readreg(core#MAADR4, 1, ptr_addr+2)
+    readreg(core#MAADR3, 1, ptr_addr+3)
+    readreg(core#MAADR2, 1, ptr_addr+4)
+    readreg(core#MAADR1, 1, ptr_addr+5)
+
 PUB InterPktGap(dly): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for _non_-back-to-back packets
 '   Valid values: 0..127
@@ -350,6 +360,16 @@ PUB MaxRetransmits(max_nr): curr_max
         other:
             curr_max := 0
             readreg(core#MACLCON1, 1, @curr_max)
+
+PUB NodeAddress(ptr_addr)
+' Set this node's MAC address
+'   Valid values: pointer to six 8-bit values
+    writereg(core#MAADR6, 1, ptr_addr)
+    writereg(core#MAADR5, 1, ptr_addr+1)
+    writereg(core#MAADR4, 1, ptr_addr+2)
+    writereg(core#MAADR3, 1, ptr_addr+3)
+    writereg(core#MAADR2, 1, ptr_addr+4)
+    writereg(core#MAADR1, 1, ptr_addr+5)
 
 PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
 ' Set ethernet receive filter mask
