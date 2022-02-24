@@ -259,6 +259,20 @@ PUB FullDuplex(state): curr_state
     state := ((curr_state & core#FULDPX_MASK) | state)
     writereg(core#MACON3, 1, @state)
 
+PUB InterPktGap(dly): curr_dly  'XXX tentatively named
+' Set inter-packet gap delay for back-to-back packets
+'   Valid values: 0..127
+'   Any other value polls the chip and returns the current setting
+'   NOTE: When FullDuplex() == 1, recommended setting is $15
+'       When FullDuplex() == 0, recommended setting is $12
+    case dly
+        0..127:
+            writereg(core#MABBIPG, 1, @dly)
+        other:
+            curr_dly := 0
+            readreg(core#MABBIPG, 1, @curr_dly)
+            return
+
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
 '   Valid values: TRUE (-1 or 1), FALSE (0)
