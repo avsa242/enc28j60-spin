@@ -134,6 +134,22 @@ PUB CollisionWin(nr_bytes): curr_nr 'XXX tentatively named
             readreg(core#MACLCON2, 1, @curr_nr)
             return
 
+PUB FIFOPtrAutoInc(state): curr_state
+' Auto-increment FIFO pointer when writing
+'   Valid values: TRUE (-1) or FALSE (0)
+'   Any other value polls the chip and returns the current setting
+'   NOTE: When reached the end of the FIFO, the pointer wraps to the start
+    curr_state := 0
+    readreg(core#ECON2, 1, @curr_state)
+    case ||(state)
+        0, 1:
+            state := ||(state) << core#AUTOINC
+        other:
+            return (((curr_state >> core#AUTOINC) & 1) == 1)
+
+    state := ((curr_state & core#AUTOINC_MASK) | state)
+    writereg(core#ECON2, 1, @state)
+
 PUB FIFORdPtr(rxpos): curr_ptr
 ' Set read position within FIFO
 '   Valid values: 0..8191
@@ -371,6 +387,28 @@ PUB NodeAddress(ptr_addr)
     writereg(core#MAADR2, 1, ptr_addr+4)
     writereg(core#MAADR1, 1, ptr_addr+5)
 
+PUB PktCtrl(mask)
+' Set per-packet control mask
+'   Bits: 3..0
+'       3: huge frame enable
+'           1: packet will be transmitted in whole
+'           0: MAC will transmit up to MaxFrameLen() bytes, after which
+'               the packet will be aborted
+'       2: padding enable
+'           1: packet will be zero-padded to 60 bytes
+'           0: no padding will be added
+'       1: CRC enable
+'           1: if 'override' == 1, CRC will be appended to frame
+'           0: no CRC will be appended; the last four bytes of the frame
+'               will be checked for validity as a CRC
+'       0: override
+'           1: the above bits will override configuration defined by:
+'               FramePadding(), XXX TBD
+'           0: the above bits will be ignored and configuration will be
+'               defined by FramePadding(), XXX TBD
+    mask &= $0f
+    txpayload(@mask, 1)
+
 PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
 ' Set ethernet receive filter mask
 '   Bits: 7..0
@@ -475,6 +513,17 @@ PUB TXFlowCtrl(state): curr_state   'XXX tentatively named
 
     state := ((curr_state & core#TXPAUS_MASK) | state)
     writereg(core#MACON1, 1, @state)
+
+PUB TXPayload(ptr_buff, nr_bytes)
+' Queue payload to be transmitted
+'   Valid values:
+'       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
+    case nr_bytes
+        1..8191:
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_BUFF)
+            spi.wrblock_lsbf(ptr_buff, nr_bytes)
+            outa[_CS] := 1
 
 PRI bankSel(bank_nr): curr_bank
 ' Select register bank

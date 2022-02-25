@@ -250,7 +250,19 @@ CON
         CLKRDY_MASK = CLKRDY_BITS ^ ESTAT_MASK
 
     ECON2           = ETH | $1E
-    ECON2_MASK      = $FF
+    ECON2_MASK      = $E8
+        AUTOINC     = 7
+        PKTDEC      = 6
+        PWRSV       = 5
+        VRPS        = 3
+        AUTOINC_BITS= (1 << AUTOINC)
+        PKTDEC_BITS = (1 << PKTDEC)
+        PWRSV_BITS  = (1 << PWRSV)
+        VRPS_BITS   = (1 << VRPS)
+        AUTOINC_MASK= AUTOINC_BITS ^ ECON2_MASK
+        PKTDEC_MASK = PKTDEC_BITS ^ ECON2_MASK
+        PWRSV_MASK  = PWRSV_BITS ^ ECON2_MASK
+        VRPS_MASK   = VRPS_BITS ^ ECON2_MASK
 
     ECON1           = ETH | $1F
     ECON1_MASK      = $FF
