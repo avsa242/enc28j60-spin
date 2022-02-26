@@ -398,6 +398,15 @@ PUB NodeAddress(ptr_addr)
     writereg(core#MAADR2, 1, ptr_addr+4)
     writereg(core#MAADR1, 1, ptr_addr+5)
 
+PUB PktCnt{}: pcnt
+' Get count of packets received
+'   Returns: u8
+'   NOTE: If this value reaches/exceeds 255, any new packets received will be
+'       aborted, even if space exists in the device's FIFO.
+'       When packets are "read", the counter must be decremented using PktDec()
+    pcnt := 0
+    readreg(core#EPKTCNT, 1, @pcnt)
+
 PUB PktCtrl(mask)
 ' Set per-packet control mask
 '   Bits: 3..0
@@ -419,6 +428,11 @@ PUB PktCtrl(mask)
 '               defined by FramePadding(), XXX TBD
     mask &= $0f
     txpayload(@mask, 1)
+
+PUB PktDec{}
+' Decrement packet counter
+'   NOTE: This _must_ be performed after considering a packet to be "read"
+    regbits_set(core#ECON2, core#PKTDEC_BITS)
 
 PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
 ' Set ethernet receive filter mask
