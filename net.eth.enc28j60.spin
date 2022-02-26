@@ -20,6 +20,17 @@ CON
     PAD60       = %001
     NONE        = %000
 
+' PktFilter() filters
+CON
+
+    UNICAST_EN  = (1 << 7)
+    ANDOR       = (1 << 6)
+    PFCRC_EN    = (1 << 5)
+    PATTMTCH_EN = (1 << 4)
+    MAGICPKT_EN = (1 << 3)
+    HASHTBL_EN  = (1 << 2)
+    MCAST_EN    = (1 << 1)
+    BCAST_EN    = (1 << 0)
 
 VAR
 
@@ -154,9 +165,9 @@ PUB FIFORdPtr(rxpos): curr_ptr
 ' Set read position within FIFO
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
-    case ptr
+    case rxpos
         0..FIFO_MAX:
-            writereg(core#ERDPTL, 2, @ptr)
+            writereg(core#ERDPTL, 2, @rxpos)
         other:
             curr_ptr := 0
             readreg(core#ERDPTL, 2, @curr_ptr)
@@ -464,6 +475,20 @@ PUB Reset{}
 ' Perform soft-reset
     cmd(core#SRC)
 
+PUB RXEnabled(state): curr_state
+' Enable reception of packets
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    case ||(state)
+        0:
+            regbits_clr(core#ECON1, core#RXEN_BITS)
+        1:
+            regbits_set(core#ECON1, core#RXEN_BITS)
+        other:
+            curr_state := 0
+            readreg(core#ECON1, 1, @curr_state)
+            return (((curr_state >> core#RXEN) & 1) == 1)
+
 PUB RXFlowCtrl(state): curr_state   'XXX tentatively named
 ' Enable receive flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
@@ -478,6 +503,18 @@ PUB RXFlowCtrl(state): curr_state   'XXX tentatively named
 
     state := ((curr_state & core#RXPAUS_MASK) | state)
     writereg(core#MACON1, 1, @state)
+
+PUB RXPayload(ptr_buff, nr_bytes)
+' Receive payload from FIFO
+'   Valid values:
+'       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
+'   NOTE: ptr_buff must point to a buffer at least nr_bytes long
+    case nr_bytes
+        1..8191:
+            outa[_CS] := 0
+            spi.wr_byte(core#RD_BUFF)
+            spi.rdblock_lsbf(ptr_buff, nr_bytes)
+            outa[_CS] := 1
 
 PUB TXDefer(state): curr_state  'XXX tentatively named
 ' Defer transmission
@@ -518,6 +555,7 @@ PUB TXPayload(ptr_buff, nr_bytes)
 ' Queue payload to be transmitted
 '   Valid values:
 '       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
+'   NOTE: ptr_buff must point to a buffer at least nr_bytes long
     case nr_bytes
         1..8191:
             outa[_CS] := 0
@@ -578,9 +616,6 @@ PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
                 other:                          ' invalid reg_nr
                     return
         MAC, MII:                               ' MAC or MII regs
-            if reg_nr.byte[0] == $00
-                outa[11] := 0
-                dira[11] := 1
             case reg_nr.byte[0]
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
