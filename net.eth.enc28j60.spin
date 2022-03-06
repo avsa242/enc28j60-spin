@@ -30,6 +30,10 @@ CON
     MCAST_EN    = (1 << 1)
     BCAST_EN    = (1 << 0)
 
+{ PHY link states }
+    DOWN        = 0
+    UP          = 1
+
 VAR
 
     long _CS
@@ -320,6 +324,24 @@ PUB GetNodeAddress(ptr_addr)
     readreg(core#MAADR2, 1, ptr_addr+4)
     readreg(core#MAADR1, 1, ptr_addr+5)
 
+PUB HDXLoopback(state): curr_state
+' Enable loopback mode when operating in half-duplex
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+'   NOTE: When FullDuplex() == TRUE, this setting is ignored.
+    curr_state := 0
+    readreg(core#PHCON2, 1, @curr_state)
+    case ||(state)
+        0, 1:
+            { invert logic before setting bit - description of field
+             actually reads as 'PHY half-duplex loopback _disable_ bit' }
+            state := ((!state) & 1) << core#HDLDIS
+        other:
+            return (((curr_state >> core#HDLDIS) & 1) == 0)
+
+    state := ((curr_state & core#HDLDIS_MASK) | state)
+    writereg(core#PHCON2, 1, @state)
+
 PUB InterPktGap(dly): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for _non_-back-to-back packets
 '   Valid values: 0..127
@@ -394,6 +416,142 @@ PUB NodeAddress(ptr_addr)
     writereg(core#MAADR4, 1, ptr_addr+3)
     writereg(core#MAADR5, 1, ptr_addr+4)
     writereg(core#MAADR6, 1, ptr_addr+5)
+
+PUB PHYFullDuplex(state): curr_state    'XXX tentatively named
+' Set PHY to full-duplex
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    curr_state := 0
+    readreg(core#PHCON1, 1, @curr_state)
+    case ||(state)
+        0, 1:
+            state := ||(state) << core#PDPXMD
+        other:
+            return (((curr_state >> core#PDPXMD) & 1) == 1)
+
+    state := ((curr_state & core#PDPXMD_MASK) | state)
+    writereg(core#PHCON1, 1, @state)
+
+PUB PHYLEDAMode(mode): curr_md  'XXX tentatively named
+' Configure PHY LED A mode
+'   Valid values:
+'       %0001: display transmit activity
+'       %0010: display receive activity
+'       %0011: display collision activity
+'       %0100: display link status
+'       %0101: display duplex status
+'       %0111: display transmit and receive activity
+'       %1000: always on
+'       %1001: always off
+'       %1010: blink fast
+'       %1011: blink slow
+'       %1100: display link status and receive activity
+'       %1101: display link status and tx/rx activity
+'       %1110: display duplex status and collision activity
+    curr_md := 0
+    readreg(core#PHLCON, 1, @curr_md)
+    case mode
+        %0001..%0101, %0111..%1110:
+            mode <<= core#LACFG
+        other:
+            return ((curr_md >> core#LACFG) & core#LACFG_BITS)
+
+    mode := ((curr_md & core#LACFG_MASK) | mode)
+    writereg(core#PHLCON, 1, @mode)
+
+PUB PHYLEDBMode(mode): curr_md    'XXX tentatively named
+' Configure PHY LED B mode
+'   Valid values:
+'       %0001: display transmit activity
+'       %0010: display receive activity
+'       %0011: display collision activity
+'       %0100: display link status
+'       %0101: display duplex status
+'       %0111: display transmit and receive activity
+'       %1000: always on
+'       %1001: always off
+'       %1010: blink fast
+'       %1011: blink slow
+'       %1100: display link status and receive activity
+'       %1101: display link status and tx/rx activity
+'       %1110: display duplex status and collision activity
+    curr_md := 0
+    readreg(core#PHLCON, 1, @curr_md)
+    case mode
+        %0001..%0101, %0111..%1110:
+            mode <<= core#LBCFG
+        other:
+            return ((curr_md >> core#LBCFG) & core#LBCFG_BITS)
+
+    mode := ((curr_md & core#LBCFG_MASK) | mode)
+    writereg(core#PHLCON, 1, @mode)
+
+PUB PHYLEDStretch(state): curr_state    'XXX tentatively named
+' Lengthen LED pulses
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    curr_state := 0
+    readreg(core#PHLCON, 1, @curr_state)
+    case ||(state)
+        0, 1:
+            state := ||(state) << core#STRCH
+        other:
+            return (((curr_state >> core#STRCH) & 1) == 1)
+
+    state := ((curr_state & core#STRCH_MASK) | state)
+    writereg(core#PHLCON, 1, @state)
+
+PUB PHYLinkState{}: state    'XXX tentatively named
+' Get PHY Link state
+'   Returns:
+'       DOWN (0): link down
+'       UP (1): link up
+    state := 0
+    readreg(core#PHSTAT2, 1, @state)
+    return ((state >> core#LSTAT) & 1)
+
+PUB PHYLoopback(state): curr_state    'XXX tentatively named
+' Loop-back all data transmitted and disable interface to twisted-pair
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    curr_state := 0
+    readreg(core#PHCON1, 1, @curr_state)
+    case ||(state)
+        0, 1:
+            state := ||(state) << core#PLOOPBK
+        other:
+            return (((curr_state >> core#PLOOPBK) & 1) == 1)
+
+    state := ((curr_state & core#PLOOPBK_MASK) | state)
+    writereg(core#PHCON1, 1, @state)
+
+PUB PHYPowered(state): curr_state    'XXX tentatively named
+' Power down PHY
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    curr_state := 0
+    readreg(core#PHCON1, 1, @curr_state)
+    case ||(state)
+        0, 1:
+            { invert logic before setting bit - description of field
+             actually reads as 'PHY power-_down_ bit' }
+            state := (! ||(state) ) << core#PPWRSV
+        other:
+            return (((curr_state >> core#PPWRSV) & 1) == 0)
+
+    state := ((curr_state & core#PPWRSV_MASK) | state)
+    writereg(core#PHCON1, 1, @state)
+
+PUB PHYReset{} | tmp    'XXX tentatively named
+' Reset PHY
+    tmp := core#PRST_BITS
+    writereg(core#PHCON1, 1, @tmp)
+    tmp := 0
+
+    { poll the chip and wait for the PRST bit to clear automatically }
+    repeat
+        readreg(core#PHCON1, 1, @tmp)
+    while (tmp & core#PRST_BITS)
 
 PUB PktCnt{}: pcnt
 ' Get count of packets received
