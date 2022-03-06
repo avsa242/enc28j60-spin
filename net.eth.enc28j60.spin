@@ -388,12 +388,12 @@ PUB MaxRetransmits(max_nr): curr_max
 PUB NodeAddress(ptr_addr)
 ' Set this node's MAC address
 '   Valid values: pointer to six 8-bit values
-    writereg(core#MAADR6, 1, ptr_addr)
-    writereg(core#MAADR5, 1, ptr_addr+1)
-    writereg(core#MAADR4, 1, ptr_addr+2)
-    writereg(core#MAADR3, 1, ptr_addr+3)
-    writereg(core#MAADR2, 1, ptr_addr+4)
-    writereg(core#MAADR1, 1, ptr_addr+5)
+    writereg(core#MAADR1, 1, ptr_addr)
+    writereg(core#MAADR2, 1, ptr_addr+1)
+    writereg(core#MAADR3, 1, ptr_addr+2)
+    writereg(core#MAADR4, 1, ptr_addr+3)
+    writereg(core#MAADR5, 1, ptr_addr+4)
+    writereg(core#MAADR6, 1, ptr_addr+5)
 
 PUB PktCnt{}: pcnt
 ' Get count of packets received
