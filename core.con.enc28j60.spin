@@ -281,7 +281,7 @@ CON
         PHYREV      = 0
 
     PHCON2          = PHY | $10
-    PHCON1_MASK     = $6500
+    PHCON2_MASK     = $6500
         FRCLNK      = 14
         TXDIS       = 13
         JABBER      = 10

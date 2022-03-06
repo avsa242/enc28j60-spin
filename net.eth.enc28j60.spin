@@ -148,16 +148,15 @@ PUB FIFOPtrAutoInc(state): curr_state
 '   Valid values: TRUE (-1) or FALSE (0)
 '   Any other value polls the chip and returns the current setting
 '   NOTE: When reached the end of the FIFO, the pointer wraps to the start
-    curr_state := 0
-    readreg(core#ECON2, 1, @curr_state)
     case ||(state)
-        0, 1:
-            state := ||(state) << core#AUTOINC
+        0:
+            regbits_clr(core#ECON2, core#AUTOINC_BITS)
+        1:
+            regbits_set(core#ECON2, core#AUTOINC_BITS)
         other:
+            curr_state := 0
+            readreg(core#ECON2, 1, @curr_state)
             return (((curr_state >> core#AUTOINC) & 1) == 1)
-
-    state := ((curr_state & core#AUTOINC_MASK) | state)
-    writereg(core#ECON2, 1, @state)
 
 PUB FIFORdPtr(rxpos): curr_ptr
 ' Set read position within FIFO
