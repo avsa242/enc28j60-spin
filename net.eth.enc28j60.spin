@@ -486,6 +486,11 @@ PUB Reset{}
 ' Perform soft-reset
     cmd(core#SRC)
 
+PUB RevID{}: id
+' Get device revision
+    id := 0
+    readreg(core#EREVID, 1, @id)
+
 PUB RXEnabled(state): curr_state
 ' Enable reception of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
