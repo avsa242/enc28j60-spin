@@ -548,6 +548,23 @@ PUB TXDefer(state): curr_state  'XXX tentatively named
     state := ((curr_state & core#DEFER_MASK) | state)
     writereg(core#MACON4, 1, @state)
 
+PUB TXEnabled(state): curr_state
+' Enable transmission of packets
+'   Valid values: TRUE (-1 or 1), FALSE (0)
+'   Any other value polls the chip and returns the current setting
+    case ||(state)
+        0:
+            regbits_clr(core#ECON1, core#TXRTS_BITS)
+        1:
+            { ERRATA: (B5): #10 - Reset transmit logic before send }
+            regbits_set(core#ECON1, core#TXRST_BITS)
+            regbits_clr(core#ECON1, core#TXRST_BITS)
+            regbits_set(core#ECON1, core#TXRTS_BITS)
+        other:
+            curr_state := 0
+            readreg(core#ECON1, 1, @curr_state)
+            return (((curr_state >> core#TXRTS) & 1) == 1)
+
 PUB TXFlowCtrl(state): curr_state   'XXX tentatively named
 ' Enable transmit flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
