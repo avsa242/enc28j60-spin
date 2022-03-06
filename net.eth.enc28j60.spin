@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Feb 24, 2022
+    Updated Mar 6, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -14,15 +14,13 @@ CON
 
     FIFO_MAX    = 8192-1
 
-' FramePadding() options
+{ FramePadding() options }
     VLAN        = %101
     PAD64       = %011
     PAD60       = %001
     NONE        = %000
 
-' PktFilter() filters
-CON
-
+{ PktFilter() filters }
     UNICAST_EN  = (1 << 7)
     ANDOR       = (1 << 6)
     PFCRC_EN    = (1 << 5)
@@ -55,7 +53,7 @@ PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
             _CS := CS_PIN                       ' copy i/o pin to hub var
             outa[_CS] := 1
             dira[_CS] := 1
-            _curr_bank := -1
+            _curr_bank := -1                    ' establish initial bank
 
             repeat until clkready{}
             reset
@@ -130,7 +128,7 @@ PUB ClkReady{}: status
 '   Returns: TRUE (-1) or FALSE (0)
     status := 0
     readreg(core#ESTAT, 1, @status)
-    return ((status & 1) == 1)
+    return ((status & core#CLKRDY_BITS) == 1)
 
 PUB CollisionWin(nr_bytes): curr_nr 'XXX tentatively named
 ' Set collision window, in number of bytes
@@ -592,6 +590,7 @@ PRI bankSel(bank_nr): curr_bank
         other:
             curr_bank := 0
             readreg(core#ECON1, 1, @curr_bank)
+            _curr_bank := (curr_bank & core#BSEL_BITS)
             return (curr_bank & core#BSEL_BITS)
 
 PRI cmd(cmd_nr)
@@ -604,11 +603,26 @@ PRI cmd(cmd_nr)
         other:
             return
 
+PRI MIIReady{}: flag
+' Get MII readiness status
+'   Returns: TRUE (-1) or FALSE (0)
+    banksel(3)
+    flag := 0
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_CTRL | core#MISTAT)
+    spi.rd_byte{}                               ' dummy read
+    { flag logic: is BUSY bit clear? i.e., are you _not_ busy? }
+    flag := ((spi.rd_byte & core#BUSY_BITS) == 0)
+    outa[_CS] := 1
+
 CON
 
+    { register definition byte indexes }
+    REGNR   = 0
     BANK    = 1
     TYPE    = 2
 
+    { device submodule }
     ETH     = 0
     MAC     = 1
     MII     = 2
@@ -616,25 +630,26 @@ CON
 
 PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
 ' Read nr_bytes from the device into ptr_buff
-    banksel(reg_nr.byte[BANK])
     case reg_nr.byte[TYPE]
         ETH:                                    ' Ethernet regs
-            case reg_nr.byte[0]                         ' validate register num
+            banksel(reg_nr.byte[BANK])
+            case reg_nr.byte[REGNR]             ' validate register num
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
                         outa[_CS] := 0
-                        spi.wr_byte(core#RD_CTRL | reg_nr.byte[0]+i)
+                        spi.wr_byte(core#RD_CTRL | reg_nr.byte[REGNR]+i)
                         byte[ptr_buff][i] := spi.rd_byte{}
                         outa[_CS] := 1
                     return
                 other:                          ' invalid reg_nr
                     return
         MAC, MII:                               ' MAC or MII regs
-            case reg_nr.byte[0]
+            banksel(reg_nr.byte[BANK])
+            case reg_nr.byte[REGNR]
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
                         outa[_CS] := 0
-                        spi.wr_byte(core#RD_CTRL | reg_nr.byte[0]+i)
+                        spi.wr_byte(core#RD_CTRL | reg_nr.byte[REGNR]+i)
                         spi.rd_byte{}           ' dummy read (required)
                         byte[ptr_buff][i] := spi.rd_byte{}
                         outa[_CS] := 1
@@ -642,16 +657,47 @@ PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
                 other:
                     return
         PHY:                                    ' PHY regs
+            banksel(2)                          ' for MIREGADR
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_CTRL | core#MIREGADR)
+            spi.wr_byte(reg_nr.byte[REGNR])
+            outa[_CS] := 1
+
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_CTRL | core#MICMD)
+            spi.wr_byte(core#MIIRD_BITS)
+            outa[_CS] := 1
+            time.usleep(11)                     ' 10.24uS
+
+            repeat until miiready{}
+
+            banksel(2)
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_CTRL | core#MICMD)
+            spi.wr_byte(0)
+            outa[_CS] := 1
+
+            outa[_CS] := 0
+            spi.wr_byte(core#RD_CTRL | core#MIRDL)
+            spi.rd_byte{}                       ' dummy read
+            byte[ptr_buff][0] := spi.rd_byte{}
+            outa[_CS] := 1
+
+            outa[_CS] := 0
+            spi.wr_byte(core#RD_CTRL | core#MIRDH)
+            spi.rd_byte{}
+            byte[ptr_buff][1] := spi.rd_byte{}
+            outa[_CS] := 1
 
 PRI regBits_Clr(reg, field)
-' Clear bitfield 'field' in register 'reg'
+' Clear bitfield 'field' in Ethernet register 'reg'
     outa[_CS] := 0
     spi.wr_byte(core#BFC | reg)
     spi.wr_byte(field)
     outa[_CS] := 1
 
 PRI regBits_Set(reg, field)
-' Set bitfield 'field' in register 'reg'
+' Set bitfield 'field' in Ethernet register 'reg'
     outa[_CS] := 0
     spi.wr_byte(core#BFS | reg)
     spi.wr_byte(field)
@@ -659,19 +705,37 @@ PRI regBits_Set(reg, field)
 
 PRI writeReg(reg_nr, nr_bytes, ptr_buff) | i
 ' Write nr_bytes to the device from ptr_buff
-    banksel(reg_nr.byte[BANK])
     case reg_nr.byte[TYPE]
-        ETH, MAC, MII:                                    ' Ethernet regs
-            case reg_nr.byte[0]
+        ETH, MAC, MII:                          ' Ethernet, MAC, MII regs
+            banksel(reg_nr.byte[BANK])
+            case reg_nr.byte[REGNR]
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
                         outa[_CS] := 0
-                        spi.wr_byte(core#WR_CTRL | reg_nr.byte[0]+i)
+                        spi.wr_byte(core#WR_CTRL | reg_nr.byte[REGNR]+i)
                         spi.wr_byte(byte[ptr_buff][i])
                         outa[_CS] := 1
                 other:
                     return
         PHY:                                    ' PHY regs
+            banksel(2)                          ' for MIREGADR
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_CTRL | core#MIREGADR)
+            spi.wr_byte(reg_nr.byte[REGNR])
+            outa[_CS] := 1
+
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_CTRL | core#MIWRL)
+            spi.wr_byte(byte[ptr_buff][0])
+            outa[_CS] := 1
+
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_CTRL | core#MIWRH)
+            spi.wr_byte(byte[ptr_buff][1])
+            outa[_CS] := 1
+
+            repeat until miiready{}
+
         other:
             return
 

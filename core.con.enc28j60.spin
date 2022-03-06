@@ -5,7 +5,7 @@
     Description: ENC28J60-specific constants
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Feb 24, 2022
+    Updated Mar 6, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -44,6 +44,7 @@ CON
     B2              = 2 << (BANK * 8)
     B3              = 3 << (BANK * 8)
 
+    { define regs with format: $xx_subsystem_bank_reg# }
     { bank 0 }
     ERDPTL          = ETH | B0 | $00
     ERDPTH          = ETH | B0 | $01
@@ -183,13 +184,25 @@ CON
 
     MACLCON1        = MAC | B2 | $08
     MACLCON2        = MAC | B2 | $09
+    MACLCON2_MASK   = $3F
+        COLWIN      = 0
+        COLWIN_BITS = %111111
+        COLWIN_MASK = COLWIN_BITS ^ MACLCON2_MASK
 
     MAMXFLL         = MAC | B2 | $0A
     MAMXFLH         = MAC | B2 | $0B
 
     MICMD           = MII | B2 | $12
+    MICMD_MASK      = $03
+        MIISCAN     = 1
+        MIIRD       = 0
+        MIISCAN_BITS= (1 << MIISCAN)
+        MIIRD_BITS  = 1
+        MIISCAN_MASK= MIISCAN_BITS ^ MICMD_MASK
+        MIIRD_MASK  = MIIRD_BITS ^ MICMD_MASK
 
     MIREGADR        = MII | B2 | $14
+    MIREGADR_MASK   = $1F
 
     MIWRL           = MII | B2 | $16
     MIWRH           = MII | B2 | $17
@@ -213,6 +226,13 @@ CON
     EBSTCSH         = ETH | B3 | $09
 
     MISTAT          = MII | B3 | $0A
+    MISTAT_MASK     = $07
+        NVALID      = 2
+        SCAN        = 1
+        BUSY        = 0
+        NVALID_BITS = (1 << NVALID)
+        SCAN_BITS   = (1 << SCAN)
+        BUSY_BITS   = 1
 
     EREVID          = ETH | B3 | $12
 
@@ -223,6 +243,103 @@ CON
     EPAUSL          = ETH | B3 | $18
     EPAUSH          = ETH | B3 | $19
 
+{ PHY regs }
+    PHCON1          = PHY | $00
+    PHCON1_MASK     = $C900
+        PRST        = 15
+        PLOOPBK     = 14
+        PPWRSV      = 11
+        PDPXMD      = 8
+        PRST_BITS   = (1 << PRST)
+        PLOOPBK_BITS= (1 << PLOOPBK)
+        PPWRSV_BITS = (1 << PPWRSV)
+        PDPXMD_BITS = (1 << PDPXMD)
+        PRST_MASK   = PRST_BITS ^ PHCON1_MASK
+        PLOOPBK_MASK= PLOOPBK_BITS ^ PHCON1_MASK
+        PPWRSV_MASK = PPWRSV_BITS ^ PHCON1_MASK
+        PDPXMD_MASK = PDPXMD_BITS ^ PHCON1_MASK
+
+    PHSTAT1         = PHY | $01
+    PHSTAT1_MASK    = $1806
+        PFDPX       = 12
+        PHDPX       = 11
+        LLSTAT      = 2
+        JBSTAT      = 1
+        PFDPX_BITS  = (1 << PFDPX)
+        PHDPX_BITS  = (1 << PHDPX)
+        LLSTAT_BITS = (1 << LLSTAT)
+        JBSTAT_BITS = (1 << JBSTAT)
+
+    PHID1           = PHY | $02
+    PHID1_MASK      = $FFFF
+        OUI3_18     = 0
+
+    PHID2           = PHY | $03
+    PHID2_MASK      = $FFFF
+        OUI19_24    = 10
+        PHYPN       = 4
+        PHYREV      = 0
+
+    PHCON2          = PHY | $10
+    PHCON1_MASK     = $6500
+        FRCLNK      = 14
+        TXDIS       = 13
+        JABBER      = 10
+        HDLDIS      = 8
+        FRCLNK_BITS = (1 << FRCLNK)
+        TXDIS_BITS  = (1 << TXDIS)
+        JABBER_BITS = (1 << JABBER)
+        HDLDIS_BITS = (1 << HDLDIS)
+        FRCLNK_MASK = FRCLNK_BITS ^ PHCON2_MASK
+        TXDIS_MASK  = TXDIS_BITS ^ PHCON2_MASK
+        JABBER_MASK = JABBER_BITS ^ PHCON2_MASK
+        HDLDIS_MASK = HDLDIS_BITS ^ PHCON2_MASK
+
+    PHSTAT2         = PHY | $11
+    PHSTAT2_MASK    = $3E20
+        TXSTAT      = 13
+        RXSTAT      = 12
+        COLSTAT     = 11
+        LSTAT       = 10
+        DPXSTAT     = 9
+        PLRITY      = 5
+        TXSTAT_BITS = (1 << TXSTAT)
+        RXSTAT_BITS = (1 << RXSTAT)
+        COLSTAT_BITS= (1 << COLSTAT)
+        LSTAT_BITS  = (1 << LSTAT)
+        DPXSTAT_BITS= (1 << DPXSTAT)
+        PLRITY_BITS = (1 << PLRITY)
+
+    PHIE            = PHY | $12
+    PHIE_MASK       = $0012
+        PLNKIE      = 4
+        PGEIE       = 1
+
+    PHIR            = PHY | $13
+    PHIR_MASK       = $0014
+        PLNKIF      = 4
+        PGIF        = 2
+        PLNKIF_BITS = (1 << PLNKIF)
+        PGIF_BITS   = (1 << PGIF)
+        PLNKIF_MASK = PLNKIF_BITS ^ PHIR_MASK
+        PGIF_MASK   = PGIF_BITS ^ PHIR_MASK
+
+    PHLCON          = PHY | $14
+    PHLCON_MASK     = $3FFE
+        RSVDSET     = 12                        ' rsvd bits 13..12 must be set
+        LACFG       = 8
+        LBCFG       = 4
+        LFRQ        = 2
+        STRCH       = 1
+        RSVDSET_BITS= (%11 << RSVDSET)
+        LACFG_BITS  = (%1111 << LACFG)
+        LBCFG_BITS  = (%1111 << LBCFG)
+        LFRQ_BITS   = (%11 << LFRQ)
+        STRCH_BITS  = (1 << STRCH)
+        LACFG_MASK  = LACFG_BITS ^ PHLCON_MASK
+        LBCFG_MASK  = LBCFG_BITS ^ PHLCON_MASK
+        LFRQ_MASK   = LFRQ_BITS ^ PHLCON_MASK
+        STRCH_MASK  = STRCH_BITS ^ PHLCON_MASK
 
 { bank-agnostic regs }
     EIE             = ETH | $1B
