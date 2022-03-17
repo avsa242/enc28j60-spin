@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Mar 6, 2022
+    Updated Mar 17, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -74,6 +74,57 @@ PUB Stop{}
 
 PUB Defaults{}
 ' Set factory defaults
+
+CON
+' XXX temporary
+    TX_BUFFER_SIZE  = 1518
+    RXSTART         = 0
+    RXSTOP          = (TXSTART - 2) | 1                 '6665
+    TXSTART         = 8192 - (TX_BUFFER_SIZE + 8)       '6666
+    TXEND           = TXSTART + (TX_BUFFER_SIZE + 8)    '8192 (xxx - shouldn't this be 8191?)
+
+PUB Preset_FDX
+' Preset settings; full-duplex
+    rxenabled(false)
+    txenabled(false)
+
+    { set up on-chip FIFO }
+    fifoptrautoinc(true)
+    fifordptr(RXSTART)
+    fiforxstart(RXSTART)
+    fiforxrdptr(RXSTOP)
+    fiforxend(RXSTOP)
+    fifotxstart(TXSTART)
+
+    macrxenabled(true)      ' MACON1
+    rxflowctrl(true)
+    txflowctrl(true)
+
+    framelencheck(true)     ' MACON3
+    framepadding(PAD60)
+
+    txdefer(true)           ' MACON4
+
+    collisionwin(63)        ' MACLCON2
+
+    interpktgap(18)         ' MAIPGL $12
+    interpktgaphdx(12)      ' MAIPGH $0c
+
+    maxframelen(1518)       ' MAMXFLL
+
+    b2binterpktgap(18)      ' MABBIPG $12
+
+    hdxloopback(false)      ' PHCON2
+
+    phyloopback(false)      ' PHCON1
+    phypowered(true)        ' PHCON1
+    phyfullduplex(true)    ' PHCON1
+    fullduplex(true)
+
+    phyledamode(%0101)'%100)       ' PHLCON LED A: display link status
+    phyledbmode(%111)       ' LED B: display tx/rx activity
+    phyledstretch(true)     ' lengthen LED pulses
+    rxenabled(true)
 
 PUB B2BInterPktGap(dly): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for back-to-back packets
@@ -317,12 +368,12 @@ PUB FullDuplex(state): curr_state
 PUB GetNodeAddress(ptr_addr)
 ' Get this node's currently set MAC address
 '   NOTE: Buffer pointed to by ptr_addr must be 6 bytes long
-    readreg(core#MAADR6, 1, ptr_addr)
-    readreg(core#MAADR5, 1, ptr_addr+1)
+    readreg(core#MAADR1, 1, ptr_addr+5)         '
+    readreg(core#MAADR2, 1, ptr_addr+4)         ' OUI
+    readreg(core#MAADR3, 1, ptr_addr+3)         '
     readreg(core#MAADR4, 1, ptr_addr+2)
-    readreg(core#MAADR3, 1, ptr_addr+3)
-    readreg(core#MAADR2, 1, ptr_addr+4)
-    readreg(core#MAADR1, 1, ptr_addr+5)
+    readreg(core#MAADR5, 1, ptr_addr+1)
+    readreg(core#MAADR6, 1, ptr_addr)
 
 PUB HDXLoopback(state): curr_state
 ' Enable loopback mode when operating in half-duplex
@@ -410,12 +461,12 @@ PUB MaxRetransmits(max_nr): curr_max
 PUB NodeAddress(ptr_addr)
 ' Set this node's MAC address
 '   Valid values: pointer to six 8-bit values
-    writereg(core#MAADR1, 1, ptr_addr)
-    writereg(core#MAADR2, 1, ptr_addr+1)
-    writereg(core#MAADR3, 1, ptr_addr+2)
-    writereg(core#MAADR4, 1, ptr_addr+3)
-    writereg(core#MAADR5, 1, ptr_addr+4)
-    writereg(core#MAADR6, 1, ptr_addr+5)
+    writereg(core#MAADR1, 1, ptr_addr+5)        '
+    writereg(core#MAADR2, 1, ptr_addr+4)        ' OUI
+    writereg(core#MAADR3, 1, ptr_addr+3)        '
+    writereg(core#MAADR4, 1, ptr_addr+2)
+    writereg(core#MAADR5, 1, ptr_addr+1)
+    writereg(core#MAADR6, 1, ptr_addr)
 
 PUB PHYFullDuplex(state): curr_state    'XXX tentatively named
 ' Set PHY to full-duplex
