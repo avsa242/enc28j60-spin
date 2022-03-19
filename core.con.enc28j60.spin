@@ -5,7 +5,7 @@
     Description: ENC28J60-specific constants
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Mar 6, 2022
+    Updated Mar 19, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -345,6 +345,20 @@ CON
     EIE             = ETH | $1B
 
     EIR             = ETH | $1C
+    EIR_MASK        = $7B
+        PKTIF       = 6
+        DMAIF       = 5
+        LINKIF      = 4
+        TXIF        = 3
+        TXERIF      = 1
+        RXERIF      = 0
+        PKTIF_BITS  = (1 << PKTIF)
+        DMAIF_BITS  = (1 << DMAIF)
+        LINKIF_BITS = (1 << LINKIF)
+        TXIF_BITS   = (1 << TXIF)
+        TXERIF_BITS = (1 << TXERIF)
+        RXERIF_BITS = 1
+        EIR_CLRBITS = DMAIF | TXIF | TXERIF | RXERIF
 
     ESTAT           = ETH | $1D
     ESTAT_MASK      = $D7

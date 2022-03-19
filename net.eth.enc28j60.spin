@@ -393,6 +393,18 @@ PUB HDXLoopback(state): curr_state
     state := ((curr_state & core#HDLDIS_MASK) | state)
     writereg(core#PHCON2, 1, @state)
 
+PUB IntClear(mask)
+' Clear interrupts
+'   Valid values:
+'       Bits: 5, 3, 1, 0 (set a bit to clear the corresponding interrupt flag)
+'       5: DMA copy or checksum calculation has completed
+'       3: transmit has ended
+'       1: transmit error
+'       0: receive error: insufficient buffer space
+'   Any other value is ignored
+    mask &= core#EIR_CLRBITS
+    writereg(core#EIR, 1, @mask)
+
 PUB InterPktGap(dly): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for _non_-back-to-back packets
 '   Valid values: 0..127
@@ -418,6 +430,19 @@ PUB InterPktGapHDX(dly): curr_dly  'XXX tentatively named
             curr_dly := 0
             readreg(core#MAIPGH, 1, @curr_dly)
             return
+
+PUB Interrupt{}: int_src
+' Interrupt flags
+'   Returns: bits 6..0
+'       6: receive packet pending
+'       5: DMA copy or checksum calculation has completed
+'       4: PHY link state has changed
+'       3: transmit has ended
+'       1: transmit error
+'       0: receive error: insufficient buffer space
+'           or PktCnt() => 255 (call PktDec())
+    int_src := 0
+    readreg(core#EIR, 1, @int_src)
 
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
@@ -609,6 +634,7 @@ PUB PktCnt{}: pcnt
 '   Returns: u8
 '   NOTE: If this value reaches/exceeds 255, any new packets received will be
 '       aborted, even if space exists in the device's FIFO.
+'       Bit 0 (RXERIF) will be set in Interrupt()
 '       When packets are "read", the counter must be decremented using PktDec()
     pcnt := 0
     readreg(core#EPKTCNT, 1, @pcnt)
@@ -761,7 +787,7 @@ PUB TXDefer(state): curr_state  'XXX tentatively named
     state := ((curr_state & core#DEFER_MASK) | state)
     writereg(core#MACON4, 1, @state)
 
-PUB TXEnabled(state): curr_state
+PUB TXEnabled(state): curr_state | checked
 ' Enable transmission of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -773,10 +799,17 @@ PUB TXEnabled(state): curr_state
             regbits_set(core#ECON1, core#TXRST_BITS)
             regbits_clr(core#ECON1, core#TXRST_BITS)
             regbits_set(core#ECON1, core#TXRTS_BITS)
+            repeat checked from 1 to 15
+                if (interrupt{} & (core#TXERIF | core#TXIF))
+                    quit
+                if (checked => 15)
+                    curr_state := core#TXERIF   'XXX establish error codes
+                time.usleep(250)
         other:
             curr_state := 0
             readreg(core#ECON1, 1, @curr_state)
             return (((curr_state >> core#TXRTS) & 1) == 1)
+    regbits_clr(core#ECON1, core#TXRTS_BITS)
 
 PUB TXFlowCtrl(state): curr_state   'XXX tentatively named
 ' Enable transmit flow control
