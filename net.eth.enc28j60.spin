@@ -121,7 +121,7 @@ PUB Preset_FDX
     phyfullduplex(true)    ' PHCON1
     fullduplex(true)
 
-    phyledamode(%0101)'%100)       ' PHLCON LED A: display link status
+    phyledamode(%100)       ' PHLCON LED A: display link status
     phyledbmode(%111)       ' LED B: display tx/rx activity
     phyledstretch(true)     ' lengthen LED pulses
     rxenabled(true)
