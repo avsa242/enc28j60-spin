@@ -3,10 +3,11 @@
     Filename: DHCP-LeaseIP-Demo.spin
     Author: Jesse Burt
     Description: Demo using the ENC28J60 driver and preliminary network
-        protocol objects to lease an IP using DHCP from a remote server
+        protocol objects to lease an IP address using DHCP from a remote server
+        for 2 minutes, and renew when the lease expires
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Mar 19, 2022
+    Updated Mar 20, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -53,7 +54,9 @@ OBJ
     ser     : "com.serial.terminal.ansi"
     time    : "time"
     eth     : "net.eth.enc28j60"
+#ifdef YBOX2
     fsyn    : "signal.synth"
+#endif
     ethii   : "protocol.net.eth-ii"
     ip      : "protocol.net.ip"
     arp     : "protocol.net.arp"
@@ -122,36 +125,38 @@ PUB Main{} | rn
                 discover{}
                 _dhcp_state++
             SELECTING:
-                rn := (math.rndi(2)-1)' add random (-1..+1) sec delay
-                _timer_set := (_dly + rn) <# 64            ' start counting down
-                ser.printf1(@"timer: %d\n", _timer_set)
+                rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
+                _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
                     if (eth.pktcnt{})           ' pkt received?
                         getframe{}
                         if (processframe{} == bootp#DHCPOFFER)
+                            { offer received from DHCP server; request it }
                             _dhcp_state := REQUESTING
                             quit                ' got an offer; next state
                 while _timer_set
-                { timer expired without a response, or an offer was received }
                 if (_dhcp_state == SELECTING)
+                    { timer expired without a response; double the delay time
+                        +/- 1sec, up to 64secs, until the next attempt }
                     if (_dly < 64)
                         _dly *= 2
                     _xid++
                     _dhcp_state := INIT
                     ser.strln(@"No response - retrying")
                 else
-                    _dly := 4
+                    _dly := 4                   ' reset delay time
             REQUESTING:
                 request{}
                 _dhcp_state++
             3:
                 rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
                 _timer_set := (_dly + rn) <# 64 ' start counting down
-                ser.printf1(@"timer: %d\n", _timer_set)
                 repeat
                     if (eth.pktcnt{})
                         getframe{}
                         if (processframe{} == bootp#DHCPACK)
+                            { server acknowledged request; we're now bound
+                                to this IP }
                             _dhcp_state := BOUND
                             quit
                 while _timer_set
@@ -161,6 +166,7 @@ PUB Main{} | rn
                     _dhcp_state := REQUESTING
             BOUND:
                 _my_ip := bootp.getyourip{}
+                ser.strln(@"---")
                 ser.fgcolor(ser#GREEN)
                 showipaddr(@"My IP: ", _my_ip)
                 ser.fgcolor(ser#WHITE)
@@ -168,22 +174,30 @@ PUB Main{} | rn
                 ser.printf1(@"Lease time: %dsec\n", bootp.getipleasetime{})
                 ser.printf1(@"Rebind time: %dsec\n", bootp.getiprebindtime{})
                 ser.printf1(@"Renewal time: %dsec\n", bootp.getiprenewaltime{})
+                ser.strln(@"---")
                 { set a timer for the lease expiry }
                 _timer_set := bootp.getipleasetime{}
                 _dhcp_state++
             6:
                 ifnot (_timer_set)
+                    { when the lease timer expires, reset everything back
+                        to the initial state and try to get a new lease }
                     ser.strln(@"Lease expired. Renewing IP")
                     _xid := (math.rndi($7fff_ffff) & $7fff_fff0)
                     _dhcp_state := INIT
                 if (eth.pktcnt{})
+                    { if any frames are received, process them; they might be
+                        the server sending ARP requests confirming we're
+                        bound to the IP }
                     getframe{}
                     processframe{}
                 if (ser.rxcheck{} == "l")
+                    { press 'l' at any time to see how much time we have left
+                        on our lease }
                     ser.printf1(@"Lease time remaining: %dsec\n", _timer_set)
 
-PUB Discover | ipchk
-
+PUB Discover{} | ipchk
+' Construct a DHCPDISCOVER message, and transmit it
     wordfill(@_ethii_st, 0, 4)
     setptr(@_txbuff)
     startframe{}
@@ -228,7 +242,7 @@ PUB Discover | ipchk
     bootp.gatewayip($00_00_00_00)
     bootp.clientmac(@_mac_local)
     bootp.paramsreqd(@_dhcp_params, 5)
-    bootp.ipleasetime(120)  '2min
+    bootp.ipleasetime(120)                      ' request 2min lease
     bootp.dhcpmaxmsglen(MTU_MAX)
     _txptr += bootp.wr_dhcp_msg(@_txbuff[_txptr], bootp#DHCPDISCOVER)
 
@@ -243,12 +257,12 @@ PUB Discover | ipchk
     setptr(@_txbuff+_ip_st+ip#IPCKSUM)
     wrword_msbf(ipchk)
 '    ser.hexdump(@_txbuff, 0, 4, _txptr, 16)
-    ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][DHCPDISCOVER]\n", _txptr)
+    ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPDISCOVER]\n", _txptr)
     eth.txpayload(@_txbuff, _txptr)
     sendframe{}
 
-PUB Request | dlen, i, ipchk
-
+PUB Request{} | ipchk
+' Construct a DHCPREQUEST message, and transmit it
     wordfill(@_ethii_st, 0, 4)
     setptr(@_txbuff)
     startframe{}
@@ -305,8 +319,7 @@ PUB Request | dlen, i, ipchk
     setptr(@_txbuff+_ip_st+ip#IPCKSUM)
     wrword_msbf(ipchk)
 
-    ser.printf1(@"[TX: %d]", _txptr)
-    ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][DHCPREQUEST]\n", _txptr)
+    ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPREQUEST]\n", _txptr)
 
     eth.txpayload(@_txbuff, _txptr)
     sendframe{}
@@ -500,11 +513,11 @@ PUB Setup{}
     ser.strln(@"Serial terminal started")
 
     cognew(cog_timer{}, @_tmr_stack)
-
+#ifdef YBOX2
     { YBOX2: feed the ENC28J60 a 25MHz clock, and give it time to lock onto it }
-    fsyn.synth("A", 7, 25_000_000)
+    fsyn.synth("A", cfg#ENC_OSCPIN, 25_000_000)
     time.msleep(50)
-
+#endif
     if (eth.startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN))
         ser.strln(string("ENC28J60 driver started"))
     else
