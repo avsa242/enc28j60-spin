@@ -22,6 +22,7 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 driver object for the ENC28J6
 
 P1/SPIN1:
 * spin-standard-library
+* [network-spin](https://github.com/avsa242/network-spin) - Networking protocols objects/headers
 
 ~~P2/SPIN2:~~
 * ~~p2-spin-standard-library~~
