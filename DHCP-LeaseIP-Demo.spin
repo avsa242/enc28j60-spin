@@ -165,18 +165,18 @@ PUB Main{} | rn
                         _dly *= 2
                     _dhcp_state := REQUESTING
             BOUND:
-                _my_ip := bootp.getyourip{}
+                _my_ip := bootp.yourip{}
                 ser.strln(@"---")
                 ser.fgcolor(ser#GREEN)
                 showipaddr(@"My IP: ", _my_ip)
                 ser.fgcolor(ser#WHITE)
                 ser.newline{}
-                ser.printf1(@"Lease time: %dsec\n", bootp.getipleasetime{})
-                ser.printf1(@"Rebind time: %dsec\n", bootp.getiprebindtime{})
-                ser.printf1(@"Renewal time: %dsec\n", bootp.getiprenewaltime{})
+                ser.printf1(@"Lease time: %dsec\n", bootp.ipleasetime{})
+                ser.printf1(@"Rebind time: %dsec\n", bootp.iprebindtime{})
+                ser.printf1(@"Renewal time: %dsec\n", bootp.iprenewaltime{})
                 ser.strln(@"---")
                 { set a timer for the lease expiry }
-                _timer_set := bootp.getipleasetime{}
+                _timer_set := bootp.ipleasetime{}
                 _dhcp_state++
             6:
                 ifnot (_timer_set)
@@ -202,10 +202,10 @@ PUB Discover{} | ipchk
     setptr(@_txbuff)
     startframe{}
     _ethii_st := _txptr                         ' mark start of Eth-II data
-    ethii.destaddr(@_mac_bcast)
-    ethii.srcaddr(@_mac_local)
-    ethii.ethertype(ETYP_IPV4)
-    _txptr += ethii.writeframe(@_txbuff[_txptr])
+    ethii.setdestaddr(@_mac_bcast)
+    ethii.setsrcaddr(@_mac_local)
+    ethii.setethertype(ETYP_IPV4)
+    _txptr += ethii.wr_ethii_frame(@_txbuff[_txptr])
 
     _ip_st := _txptr                            ' mark start of IPV4 data
     ip.setversion(4)
@@ -221,38 +221,38 @@ PUB Discover{} | ipchk
     ip.sethdrchksum($0000)
     ip.setsourceaddr($00_00_00_00)
     ip.setdestaddr($ff_ff_ff_ff)
-    _txptr += ip.writedgram(@_txbuff[_txptr])
+    _txptr += ip.wr_ip_header(@_txbuff[_txptr])
 
     _udp_st := _txptr                           ' mark start of UDP data
     udp.setsourceport(udp#BOOTP_C)
     udp.setdestport(udp#BOOTP_S)
-    _txptr += udp.writedgram(@_txbuff[_txptr])
+    _txptr += udp.wr_udp_header(@_txbuff[_txptr])
 
     _dhcp_st := _txptr                          ' mark start of BOOTP data
-    bootp.opcode(bootp#BOOT_REQ)
-    bootp.hdwtype(bootp#ETHERNET)
-    bootp.hdwaddrlen(MACADDR_LEN)
-    bootp.hops(0)
-    bootp.transid(_xid)
-    bootp.leasestartelapsed(1)
-    bootp.broadcastflag(true)
-    bootp.clientip($00_00_00_00)
-    bootp.yourip($00_00_00_00)
-    bootp.serverip($00_00_00_00)
-    bootp.gatewayip($00_00_00_00)
-    bootp.clientmac(@_mac_local)
-    bootp.paramsreqd(@_dhcp_params, 5)
-    bootp.ipleasetime(120)                      ' request 2min lease
-    bootp.dhcpmaxmsglen(MTU_MAX)
+    bootp.setopcode(bootp#BOOT_REQ)
+    bootp.sethdwtype(bootp#ETHERNET)
+    bootp.sethdwaddrlen(MACADDR_LEN)
+    bootp.sethops(0)
+    bootp.settransid(_xid)
+    bootp.setleasestartelapsed(1)
+    bootp.setbroadcastflag(true)
+    bootp.setclientip($00_00_00_00)
+    bootp.setyourip($00_00_00_00)
+    bootp.setserverip($00_00_00_00)
+    bootp.setgatewayip($00_00_00_00)
+    bootp.setclientmac(@_mac_local)
+    bootp.setparamsreqd(@_dhcp_params, 5)
+    bootp.setipleasetime(120)                      ' request 2min lease
+    bootp.setdhcpmaxmsglen(MTU_MAX)
     _txptr += bootp.wr_dhcp_msg(@_txbuff[_txptr], bootp#DHCPDISCOVER)
 
     { update UDP header with length: UDP header + DHCP message }
     setptr(@_txbuff+_udp_st+udp#DGRAMLEN)
-    wrword_msbf(udp.headerlen{} + bootp.dhcpmsglen{})
+    wrword_msbf(udp.headerlen{} + bootp.setdhcpmsglen{})
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    ip.settotallen((ip.headerlen*4)+udp.headerlen{}+bootp.dhcpmsglen{})
-    ip.writedgram(@_txbuff[_ip_st])
+    ip.settotallen((ip.headerlen*4)+udp.headerlen{}+bootp.setdhcpmsglen{})
+    ip.wr_ip_header(@_txbuff[_ip_st])
     ipchk := crc.inetchksum(@_txbuff[_ip_st], ip.headerlen{}*4)
     setptr(@_txbuff+_ip_st+ip#IPCKSUM)
     wrword_msbf(ipchk)
@@ -267,10 +267,10 @@ PUB Request{} | ipchk
     setptr(@_txbuff)
     startframe{}
     _ethii_st := _txptr
-    ethii.destaddr(@_mac_bcast)
-    ethii.srcaddr(@_mac_local)
-    ethii.ethertype(ETYP_IPV4)
-    _txptr += ethii.writeframe(@_txbuff[_txptr])
+    ethii.setdestaddr(@_mac_bcast)
+    ethii.setsrcaddr(@_mac_local)
+    ethii.setethertype(ETYP_IPV4)
+    _txptr += ethii.wr_ethii_frame(@_txbuff[_txptr])
 
     _ip_st := _txptr
     ip.setversion(4)
@@ -286,35 +286,35 @@ PUB Request{} | ipchk
     ip.sethdrchksum($0000)
     ip.setsourceaddr($00_00_00_00)
     ip.setdestaddr($ff_ff_ff_ff)
-    _txptr += ip.writedgram(@_txbuff[_txptr])
+    _txptr += ip.wr_ip_header(@_txbuff[_txptr])
 
     _udp_st := _txptr
     udp.setsourceport(udp#BOOTP_C)
     udp.setdestport(udp#BOOTP_S)
     udp.setlength(0)
     udp.setchecksum($0000)
-    _txptr += udp.writedgram(@_txbuff[_txptr])
+    _txptr += udp.wr_udp_header(@_txbuff[_txptr])
 
     _dhcp_st := _txptr
-    bootp.opcode(bootp#BOOT_REQ)
-    bootp.hdwtype(bootp#ETHERNET)
-    bootp.hdwaddrlen(MACADDR_LEN)
-    bootp.transid(_xid)
-    bootp.leasestartelapsed(1)
-    bootp.broadcastflag(true)
-    bootp.clientmac(@_mac_local)
-    bootp.paramsreqd(@_dhcp_params, 5)
-    bootp.dhcpmaxmsglen(MTU_MAX)
-    bootp.ipleasetime(120)  '2min
+    bootp.setopcode(bootp#BOOT_REQ)
+    bootp.sethdwtype(bootp#ETHERNET)
+    bootp.sethdwaddrlen(MACADDR_LEN)
+    bootp.settransid(_xid)
+    bootp.setleasestartelapsed(1)
+    bootp.setbroadcastflag(true)
+    bootp.setclientmac(@_mac_local)
+    bootp.setparamsreqd(@_dhcp_params, 5)
+    bootp.setdhcpmaxmsglen(MTU_MAX)
+    bootp.setipleasetime(120)  '2min
     _txptr += bootp.wr_dhcp_msg(@_txbuff[_txptr], bootp#DHCPREQUEST)
 
     { update UDP header with length: UDP header + DHCP message }
     setptr(@_txbuff+_udp_st+udp#DGRAMLEN)
-    wrword_msbf(udp.headerlen{} + bootp.dhcpmsglen{})
+    wrword_msbf(udp.headerlen{} + bootp.setdhcpmsglen{})
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    ip.settotallen((ip.headerlen*4)+udp.headerlen{}+bootp.dhcpmsglen{})
-    ip.writedgram(@_txbuff[_ip_st])
+    ip.settotallen((ip.headerlen*4)+udp.headerlen{}+bootp.setdhcpmsglen{})
+    ip.wr_ip_header(@_txbuff[_ip_st])
     ipchk := crc.inetchksum(@_txbuff[_ip_st], ip.headerlen{}*4)
     setptr(@_txbuff+_ip_st+ip#IPCKSUM)
     wrword_msbf(ipchk)
@@ -326,9 +326,9 @@ PUB Request{} | ipchk
 
 PUB ARP_Reply{}
 ' Construct ARP reply message
-    ethii.srcaddr(@_mac_local)
-    ethii.destaddr(arp.senderhwaddr{})
-    ethii.ethertype(ETYP_ARP)
+    ethii.setsrcaddr(@_mac_local)
+    ethii.setdestaddr(arp.senderhwaddr{})
+    ethii.setethertype(ETYP_ARP)
     arp.sethwtype(arp#HRD_ETH)
     arp.setprototype(ETYP_IPV4)
     arp.sethwaddrlen(MACADDR_LEN)
@@ -340,8 +340,8 @@ PUB ARP_Reply{}
     { is at }
     arp.setsenderhwaddr(@_mac_local)
 
-    _txptr += ethii.writeframe(@_txbuff[_txptr])
-    _txptr += arp.writearp(@_txbuff[_txptr])
+    _txptr += ethii.wr_ethii_frame(@_txbuff[_txptr])
+    _txptr += arp.wr_arp_msg(@_txbuff[_txptr])
 
     eth.txpayload(@_txbuff, _txptr)
 
@@ -370,7 +370,7 @@ PUB GetFrame{} | rdptr
 
 PRI ProcessArp(ptr_buff) | opcode
 ' Process ARP message
-    arp.readarp(ptr_buff)
+    arp.rd_arp_msg(ptr_buff)
     showarpmsg(opcode := arp.opcode{})
     case opcode
         arp#ARP_REQ:
@@ -391,9 +391,9 @@ PRI ProcessFrame{} | ether_t
 ' Hand off the frame data to the appropriate handler
 '    ser.hexdump(@_rxbuff, 0, 4, _rxlen, 16)
     _rxptr := 0
-    _rxptr += ethii.readframe(@_rxbuff[_rxptr])
+    _rxptr += ethii.rd_ethii_frame(@_rxbuff[_rxptr])
 
-    ether_t := ethii.getethertype{}
+    ether_t := ethii.ethertype{}
 
     { ARP? }
     if (ether_t == ETYP_ARP)
@@ -402,23 +402,23 @@ PRI ProcessFrame{} | ether_t
     { IPv4? }
     elseif (ether_t == ETYP_IPV4)
         ser.str(@"[IPv4]")
-        _rxptr += ip.readdgram(@_rxbuff[_rxptr])
+        _rxptr += ip.rd_ip_header(@_rxbuff[_rxptr])
         { UDP? }
         if (ip.layer4proto{} == ip#UDP)
             ser.str(@"[UDP]")
-            _rxptr += udp.readdgram(@_rxbuff[_rxptr])
+            _rxptr += udp.rd_udp_header(@_rxbuff[_rxptr])
             { BOOTP? }
             if (udp.destport{} == udp#BOOTP_C)
                 ser.str(@"[BOOTP]")
                 _rxptr += bootp.rd_bootp_msg(@_rxbuff[_rxptr])
                 bootp.resetptr{}
                 { BOOTP reply? }
-                if (bootp.getopcode{} == bootp#BOOT_REPL)
+                if (bootp.opcode{} == bootp#BOOT_REPL)
                     ser.str(@"[REPLY]")
-                    if (bootp.getdhcpmsgtype{} == bootp#DHCPOFFER)
+                    if (bootp.dhcpmsgtype{} == bootp#DHCPOFFER)
                         ser.strln(@"[DHCPOFFER]")
                         return bootp#DHCPOFFER
-                    if (bootp.getdhcpmsgtype{} == bootp#DHCPACK)
+                    if (bootp.dhcpmsgtype{} == bootp#DHCPACK)
                         ser.strln(@"[DHCPACK]")
                         return bootp#DHCPACK
                     bootp.resetptr{}
