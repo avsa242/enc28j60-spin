@@ -8,7 +8,7 @@
         (utilizes buffer IO object)
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Mar 20, 2022
+    Updated Apr 2, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -340,7 +340,7 @@ PUB ARP_Reply{}
     net.arp_setprototype(ETYP_IPV4)
     net.arp_sethwaddrlen(MACADDR_LEN)
     net.arp_setprotoaddrlen(IPV4ADDR_LEN)
-    net.bootp_setopcode(net#ARP_REPL)
+    net.arp_setopcode(net#ARP_REPL)
     net.arp_settargethwaddr(net.arp_senderhwaddr{})
     net.arp_settargetprotoaddr(net.arp_senderprotoaddr{})
     net.arp_setsenderprotoaddr(_my_ip)
