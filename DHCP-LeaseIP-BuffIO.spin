@@ -3,12 +3,16 @@
     Filename: DHCP-LeaseIP-BuffIO.spin
     Author: Jesse Burt
     Description: Demo using the ENC28J60 driver and preliminary network
-        protocol objects to lease an IP address using DHCP from a remote server
-        for 2 minutes, and renew when the lease expires
-        (utilizes buffer IO object)
+        protocols
+        * attempts to lease an IP address using DHCP from a remote server
+        * requests 2 minute lease (what it gets may depend on your network)
+        * renews the IP lease when it expires
+        * responds to ICMP Echo requests (ping)
+        * uses buffered I/O (assembles frames on the Propeller, then sends to
+            ethernet controller)
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Apr 2, 2022
+    Updated Apr 4, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -29,6 +33,11 @@ CON
     MOSI_PIN    = 3
     MISO_PIN    = 4
 
+{ set ICMP echo data buffer size to accommodate a particular implementation }
+{   of the 'ping' utility on the remote node }
+{   can be WINDOWS_PING (32), LINUX_PING (48) or any arbitrary number }
+    ICMP_DAT_LEN= LINUX_PING
+
 ' --
 
     { ENC28J60 FIFO }
@@ -48,6 +57,10 @@ CON
     BOUND       = 5
     RENEWING    = 6
     REBINDING   = 7
+
+    { _default_ data sizes for OS ping utilities }
+    LINUX_PING  = 48
+    WINDOWS_PING= 32
 
 OBJ
 
@@ -73,9 +86,7 @@ VAR
     { receive status vector }
     word _nxtpkt, _rxlen, _rxstatus
 
-    word _ethii_st, _ip_st, _udp_st, _dhcp_st
-    byte _buff[TXBUFFSZ]
-
+    byte _buff[TXBUFFSZ], _icmp_data[ICMP_DAT_LEN]
     byte _attempt
 
 DAT
@@ -99,7 +110,9 @@ PUB Main{} | rn
     math.rndseed(cnt)
     eth.pktfilter(0)
     eth.preset_fdx{}
-    eth.nodeaddress(@_mac_local) ' set and read back MAC address
+
+    { set and read back MAC address }
+    eth.nodeaddress(@_mac_local)
     eth.getnodeaddress(@_mac_local)
     showmacaddr(@"MAC Addr: ", @_mac_local)
     ser.newline{}
@@ -119,7 +132,7 @@ PUB Main{} | rn
     repeat
         case _dhcp_state
             INIT:
-                discover{}
+                dhcp_discover{}
                 _dhcp_state++
             SELECTING:
                 rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
@@ -143,7 +156,7 @@ PUB Main{} | rn
                 else
                     _dly := 4                   ' reset delay time
             REQUESTING:
-                request{}
+                dhcp_request{}
                 _dhcp_state++
             3:
                 rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
@@ -193,17 +206,17 @@ PUB Main{} | rn
                         on our lease }
                     ser.printf1(@"Lease time remaining: %dsec\n", _timer_set)
 
-PUB Discover{} | ipchk, frm_end
+PUB DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
 ' Construct a DHCPDISCOVER message, and transmit it
-    wordfill(@_ethii_st, 0, 4)
+    longfill(@ethii_st, 0, 4)
     startframe{}
-    _ethii_st := net.currptr{}                         ' mark start of Eth-II data
+    ethii_st := net.currptr{}                   ' mark start of Eth-II data
     net.ethii_setdestaddr(@_mac_bcast)
     net.ethii_setsrcaddr(@_mac_local)
     net.ethii_setethertype(ETYP_IPV4)
     net.wr_ethii_frame{}
 
-    _ip_st := net.currptr{}                    ' mark start of IPV4 data
+    ip_st := net.currptr{}                      ' mark start of IPV4 data
     net.ip_setversion(4)
     net.ip_sethdrlen(5)
     net.ip_setdscp(0)
@@ -219,13 +232,13 @@ PUB Discover{} | ipchk, frm_end
     net.ip_setdestaddr($ff_ff_ff_ff)
     net.wr_ip_header{}
 
-    _udp_st := net.currptr{}                   ' mark start of UDP data
+    udp_st := net.currptr{}                     ' mark start of UDP data
     net.udp_setsrcport(svc#BOOTP_C)
     net.udp_setdestport(svc#BOOTP_S)
     net.udp_setchksum(0)
     net.wr_udp_header{}
 
-    _dhcp_st := net.currptr{}                  ' mark start of BOOTP data
+    dhcp_st := net.currptr{}                    ' mark start of BOOTP data
     net.bootp_setopcode(net#BOOT_REQ)
     net.bootp_sethdwtype(net#ETHERNET)
     net.bootp_sethdwaddrlen(MACADDR_LEN)
@@ -239,23 +252,23 @@ PUB Discover{} | ipchk, frm_end
     net.bootp_setgwyip($00_00_00_00)
     net.bootp_setclientmac(@_mac_local)
     net.dhcp_setparamsreqd(@_dhcp_params, 5)
-    net.dhcp_setipleasetime(120)                      ' request 2min lease
+    net.dhcp_setipleasetime(120)                ' request 2min lease
     net.dhcp_setmaxmsglen(MTU_MAX)
     net.dhcp_setmsgtype(net#DHCPDISCOVER)
     net.wr_dhcp_msg{}
     frm_end := net.currptr{}
 
     { update UDP header with length: UDP header + DHCP message }
-    net.setptr(_udp_st+net#UDP_DGRAM_LEN)
+    net.setptr(udp_st+net#UDP_DGRAM_LEN)
     net.wrword_msbf(net.udp_hdrlen{} + net.dhcp_msglen{})
     net.setptr(frm_end)
 
     { update IP header with length: IP header + UDP header + DHCP message }
     net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.udp_hdrlen{}+net.dhcp_msglen{})
-    net.setptr(_ip_st)
+    net.setptr(ip_st)
     net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[_ip_st], net.ip_hdrlen{}*4)
-    net.setptr(_ip_st+net#IP_CKSUM)
+    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4)
+    net.setptr(ip_st+net#IP_CKSUM)
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
 
@@ -264,17 +277,17 @@ PUB Discover{} | ipchk, frm_end
     eth.txpayload(@_buff, frm_end)
     sendframe{}
 
-PUB Request{} | ipchk, frm_end
+PUB DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
 ' Construct a DHCPREQUEST message, and transmit it
-    wordfill(@_ethii_st, 0, 4)
+    longfill(@ethii_st, 0, 4)
     startframe{}
-    _ethii_st := net.currptr{}
+    ethii_st := net.currptr{}
     net.ethii_setdestaddr(@_mac_bcast)
     net.ethii_setsrcaddr(@_mac_local)
     net.ethii_setethertype(ETYP_IPV4)
     net.wr_ethii_frame{}
 
-    _ip_st := net.currptr{}
+    ip_st := net.currptr{}
     net.ip_setversion(4)
     net.ip_sethdrlen(5)
     net.ip_setdscp(0)
@@ -290,14 +303,14 @@ PUB Request{} | ipchk, frm_end
     net.ip_setdestaddr($ff_ff_ff_ff)
     net.wr_ip_header{}
 
-    _udp_st := net.currptr{}
+    udp_st := net.currptr{}
     net.udp_setsrcport(svc#BOOTP_C)
     net.udp_setdestport(svc#BOOTP_S)
     net.udp_setdgramlen(0)   'xxx
     net.udp_setchksum($0000)'xxx
     net.wr_udp_header{}
 
-    _dhcp_st := net.currptr{}
+    dhcp_st := net.currptr{}
     net.bootp_setopcode(net#BOOT_REQ)
     net.bootp_sethdwtype(net#ETHERNET)
     net.bootp_sethdwaddrlen(MACADDR_LEN)
@@ -313,16 +326,16 @@ PUB Request{} | ipchk, frm_end
     frm_end := net.currptr{}
 
     { update UDP header with length: UDP header + DHCP message }
-    net.setptr(_udp_st+net#UDP_DGRAM_LEN)
+    net.setptr(udp_st+net#UDP_DGRAM_LEN)
     net.wrword_msbf(net.udp_hdrlen{} + net.dhcp_msglen{})
     net.setptr(frm_end)
 
     { update IP header with length: IP header + UDP header + DHCP message }
     net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.udp_hdrlen{}+net.dhcp_msglen{})
-    net.setptr(_ip_st)
+    net.setptr(ip_st)
     net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[_ip_st], net.ip_hdrlen{}*4)
-    net.setptr(_ip_st+net#IP_CKSUM)
+    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4)
+    net.setptr(ip_st+net#IP_CKSUM)
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
 
@@ -347,7 +360,7 @@ PUB ARP_Reply{}
     { is at }
     net.arp_setsenderhwaddr(@_mac_local)
 
-    net.init(@_buff)
+    startframe{}
     net.wr_ethii_frame{}
     net.wr_arp_msg{}
 
@@ -389,9 +402,7 @@ PRI ProcessARP{} | opcode
                 if (net.arp_targetprotoaddr{} == _my_ip)
                     startframe{}
                     arp_reply{}
-                    ser.printf1(@"[TX: %d]", net.currptr{})
-                    ser.str(@"[ARP]")
-                    ser.str(@"[REPLY] ")
+                    ser.printf1(@"[TX: %d][ARP][REPLY] ", net.currptr{})
                     ser.fgcolor(ser#YELLOW)
                     showarpmsg(net#ARP_REPL)
                     ser.fgcolor(ser#WHITE)
@@ -431,7 +442,15 @@ PRI ProcessFrame{} | ether_t
                     if (net.dhcp_msgtype{} == net#DHCPACK)
                         ser.strln(@"[DHCPACK]")
                         return net#DHCPACK
-        ser.newline{}
+        { ICMP? }
+        elseif (net.ip_l4proto{} == net#ICMP)
+            ser.str(@"[ICMP]")
+            net.rd_icmp_msg{}
+            { ECHO_REQ? }
+            if (net.icmp_msgtype{} == net#ECHO_REQ)
+                ser.strln(@"[ECHO_REQ]")
+                net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
+                processicmp_echoreq{}
     else
         ser.str(@"[Unknown ethertype: ")
         ser.hex(ether_t, 4)
@@ -439,17 +458,68 @@ PRI ProcessFrame{} | ether_t
 
     bytefill(@_buff, 0, MTU_MAX)
 
-PRI SendFrame{}
-{ show raw packet }
-'    ser.hexdump(@_buff, 0, 4, net.currptr{}, 16)
-'    repeat
-{ send packet }
-    eth.fifotxstart(TXSTART)        'ETXSTL: TXSTART
-    eth.fifotxend(TXSTART+net.currptr{})   'ETXNDL: TXSTART+currptr
-    eth.txenabled(true)             'send
+PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
+' Process ICMP echo requests from a remote node
+'    ser.hexdump(@_buff, 0, 4, _rxlen, 16)
+'    ser.printf1(@"ICMP message type: %d\n", net.icmp_msgtype{})
+'    ser.printf1(@"ICMP code/subtype: %d\n", net.icmp_code{})
+'    ser.printf1(@"ICMP checksum: %x\n", net.icmp_chksum{})
+'    ser.printf1(@"ICMP identifier: %x\n", net.icmp_ident{})
+'    ser.printf1(@"ICMP sequence number: %d\n", net.icmp_seqnr{})
+'    ser.printf1(@"ICMP timestamp: %d\n", net.icmp_timestamp{})
+    if (_dhcp_state => BOUND)
+        if (net.ip_destaddr{} == _my_ip)
+            startframe{}
+            eth_st := net.currptr{}
+            net.ethii_setdestaddr(net.ethii_srcaddr{})
+            net.ethii_setsrcaddr(@_mac_local)
+            net.ethii_setethertype(ETYP_IPV4)
+            net.wr_ethii_frame{}
 
-    bytefill(@_buff, 0, MTU_MAX)
-'    bootp.resetptr{}
+            ip_st := net.currptr{}
+            net.ip_sethdrchk(0)
+            net.ip_setdestaddr(net.ip_srcaddr{})
+            net.ip_setsrcaddr(_my_ip)
+            net.ip_setttl(64)
+            net.wr_ip_header{}
+
+            icmp_st := net.currptr{}
+            net.icmp_setchksum(0)
+            net.icmp_setmsgtype(net#ECHO_REPL)
+            net.icmp_setseqnr(net.icmp_seqnr{})
+            net.wr_icmp_msg{}
+
+            { write the echo data that was received in the request }
+            net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
+            frm_end := net.currptr{}
+
+            { update IP header with length: IP header + ICMP message + echo data }
+            net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.icmp_msglen{}+ICMP_DAT_LEN)
+            net.setptr(ip_st)
+            net.wr_ip_header{}
+            ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4)
+            net.setptr(ip_st+net#IP_CKSUM)
+            net.wrword_msbf(ipchk)
+            net.setptr(frm_end)
+
+            icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen{}+ICMP_DAT_LEN)
+            net.setptr(icmp_st+net#IDX_ICMP_CKSUM)
+            net.wrword_msbf(icmpchk)
+            net.setptr(frm_end)
+
+            ser.printf1(@"[TX: %d][IPv4][ICMP][ECHO_REPL]\n", net.currptr{})
+            eth.txpayload(@_buff, net.currptr{})
+            sendframe{}
+
+PRI SendFrame{}
+' Send queued ethernet frame
+{ send packet }
+'    ser.hexdump(@_buff, 0, 4, net.currptr{}, 16)
+    eth.fifotxstart(TXSTART)                    ' ETXSTL: TXSTART
+    eth.fifotxend(TXSTART+net.currptr{})        ' ETXNDL: TXSTART+currptr
+    eth.txenabled(true)                         ' send
+
+    bytefill(@_buff, 0, MTU_MAX)                ' clear frame buffer
 
 PRI ShowARPMsg(opcode)
 ' Show Wireshark-ish messages about the ARP message received
@@ -494,7 +564,7 @@ PRI StartFrame{}
 ' Reset pointers, and add control byte to frame
     eth.fifowrptr(TXSTART)
     net.setptr(0)
-    net.wr_byte($00)                      ' per-frame control byte
+    net.wr_byte($00)                            ' per-frame control byte
 
 PRI cog_Timer{}
 
