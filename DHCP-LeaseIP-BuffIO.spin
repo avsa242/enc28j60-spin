@@ -442,6 +442,24 @@ PRI ProcessFrame{} | ether_t
                     if (net.dhcp_msgtype{} == net#DHCPACK)
                         ser.strln(@"[DHCPACK]")
                         return net#DHCPACK
+            else
+                ser.newline{}
+        elseif (net.ip_l4proto{} == net#TCP)
+            ser.strln(@"[TCP]")
+            net.rd_tcp_header{}
+            ser.hexdump(@_buff, 0, 4, _rxlen, 16)
+            ser.printf1(@"Source port: %d\n", net.tcp_srcport{})
+            ser.printf1(@"Dest port: %d\n", net.tcp_destport{})
+            ser.printf1(@"Seq number: %d\n", net.tcp_seqnr{})
+            ser.printf1(@"Ack number: %d\n", net.tcp_acknr{})
+            ser.printf1(@"Header length: %d\n", net.tcp_hdrlen{}*4)
+            ser.str(@"Flags: ")
+            ser.bin(net.tcp_flags{}, 9)
+            showtcp_flags(net.tcp_flags{})
+            ser.newline{}
+            ser.printf1(@"Window: %d\n", net.tcp_window{})
+            ser.printf1(@"Checksum: %x\n", net.tcp_chksum{})
+            ser.printf1(@"Urgent pointer: %x\n", net.tcp_urgentptr{})
         { ICMP? }
         elseif (net.ip_l4proto{} == net#ICMP)
             ser.str(@"[ICMP]")
@@ -457,6 +475,31 @@ PRI ProcessFrame{} | ether_t
         ser.strln(@"]")
 
     bytefill(@_buff, 0, MTU_MAX)
+
+PRI ShowTCP_Flags(flags) | i
+
+    ser.str(@": [")
+    repeat i from 8 to 0
+        if (flags & (|< i))
+            ser.fgcolor(ser#BRIGHT+ser#WHITE)
+            ser.str(@_tcp_flagstr[i*6])
+        else
+            ser.str(@_tcp_flagstr[i*6])
+        ser.fgcolor(ser#WHITE)
+    ser.char("]")
+
+DAT
+
+    _tcp_flagstr
+        byte    " FIN ", 0
+        byte    " SYN ", 0
+        byte    " RST ", 0
+        byte    " PSH ", 0
+        byte    " ACK ", 0
+        byte    " URG ", 0
+        byte    " ECN ", 0
+        byte    " CWR ", 0
+        byte    " NON ", 0
 
 PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
 ' Process ICMP echo requests from a remote node

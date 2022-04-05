@@ -444,6 +444,8 @@ PRI ProcessFrame() | ether_t
                     if (net.dhcp_msgtype() == net.DHCPACK)
                         ser.strln(@"[DHCPACK]")
                         return net.DHCPACK
+            else
+                ser.newline()
         { ICMP? }
         elseif (net.ip_l4proto() == net.ICMP)
             ser.str(@"[ICMP]")
