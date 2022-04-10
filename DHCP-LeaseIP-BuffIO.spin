@@ -12,7 +12,7 @@
             ethernet controller)
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Apr 4, 2022
+    Updated Apr 10, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -346,25 +346,35 @@ PUB DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
 
 PUB ARP_Reply{}
 ' Construct ARP reply message
-    net.ethii_setsrcaddr(@_mac_local)
-    net.ethii_setdestaddr(net.arp_senderhwaddr{})
-    net.ethii_setethertype(ETYP_ARP)
-    net.arp_sethwtype(net#HRD_ETH)
-    net.arp_setprototype(ETYP_IPV4)
-    net.arp_sethwaddrlen(MACADDR_LEN)
-    net.arp_setprotoaddrlen(IPV4ADDR_LEN)
+    startframe{}
+    ethii_reply{}
+    { change only the settings that differ from the request }
     net.arp_setopcode(net#ARP_REPL)
     net.arp_settargethwaddr(net.arp_senderhwaddr{})
     net.arp_settargetprotoaddr(net.arp_senderprotoaddr{})
     net.arp_setsenderprotoaddr(_my_ip)
-    { is at }
+    { /\- is at -\/ }
     net.arp_setsenderhwaddr(@_mac_local)
 
-    startframe{}
-    net.wr_ethii_frame{}
     net.wr_arp_msg{}
 
     eth.txpayload(@_buff, net.currptr{})
+    sendframe{}
+
+PUB EthII_Reply{}: pos
+' Set up/write Ethernet II frame as a reply to last received frame
+    net.ethii_setdestaddr(net.ethii_srcaddr{})
+    net.ethii_setsrcaddr(@_mac_local)
+    net.wr_ethii_frame{}
+    return net.currptr{}
+
+PUB IPV4_Reply{}: pos
+' Set up/write IPv4 header as a reply to last received header
+    net.ip_sethdrchk(0)
+    net.ip_setdestaddr(net.ip_srcaddr{})
+    net.ip_setsrcaddr(_my_ip)
+    net.wr_ip_header{}
+    return net.currptr{}
 
 PUB GetFrame{} | rdptr
 ' Receive frame from ethernet device
@@ -400,16 +410,14 @@ PRI ProcessARP{} | opcode
                 our IP, send a reply confirming we have it }
             if (_dhcp_state => BOUND)
                 if (net.arp_targetprotoaddr{} == _my_ip)
-                    startframe{}
                     arp_reply{}
                     ser.printf1(@"[TX: %d][ARP][REPLY] ", net.currptr{})
                     ser.fgcolor(ser#YELLOW)
                     showarpmsg(net#ARP_REPL)
                     ser.fgcolor(ser#WHITE)
-                    sendframe{}
         net#ARP_REPL:
 
-PRI ProcessFrame{} | ether_t
+PRI ProcessFrame{}: msg_t | ether_t
 ' Hand off the frame data to the appropriate handler
 '    ser.hexdump(@_buff, 0, 4, _rxlen, 16)
     net.init(@_buff)
@@ -477,15 +485,16 @@ PRI ProcessFrame{} | ether_t
     bytefill(@_buff, 0, MTU_MAX)
 
 PRI ShowTCP_Flags(flags) | i
-
+' Display the TCP header's flag bits as symbols
     ser.str(@": [")
     repeat i from 8 to 0
         if (flags & (|< i))
             ser.fgcolor(ser#BRIGHT+ser#WHITE)
             ser.str(@_tcp_flagstr[i*6])
         else
+            ser.fgcolor(ser#BRIGHT+ser#BLACK)
             ser.str(@_tcp_flagstr[i*6])
-        ser.fgcolor(ser#WHITE)
+    ser.fgcolor(ser#WHITE)
     ser.char("]")
 
 DAT
@@ -512,21 +521,10 @@ PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
 '    ser.printf1(@"ICMP timestamp: %d\n", net.icmp_timestamp{})
     if (_dhcp_state => BOUND)
         if (net.ip_destaddr{} == _my_ip)
-            startframe{}
-            eth_st := net.currptr{}
-            net.ethii_setdestaddr(net.ethii_srcaddr{})
-            net.ethii_setsrcaddr(@_mac_local)
-            net.ethii_setethertype(ETYP_IPV4)
-            net.wr_ethii_frame{}
+            eth_st := startframe{}
+            ip_st := ethii_reply{}
+            icmp_st := ipv4_reply{}
 
-            ip_st := net.currptr{}
-            net.ip_sethdrchk(0)
-            net.ip_setdestaddr(net.ip_srcaddr{})
-            net.ip_setsrcaddr(_my_ip)
-            net.ip_setttl(64)
-            net.wr_ip_header{}
-
-            icmp_st := net.currptr{}
             net.icmp_setchksum(0)
             net.icmp_setmsgtype(net#ECHO_REPL)
             net.icmp_setseqnr(net.icmp_seqnr{})
@@ -603,11 +601,12 @@ PRI ShowMACOUI(ptr_msg, ptr_addr) | i
         if (i > 3)
             ser.char(":")
 
-PRI StartFrame{}
+PRI StartFrame{}: pos
 ' Reset pointers, and add control byte to frame
     eth.fifowrptr(TXSTART)
     net.setptr(0)
     net.wr_byte($00)                            ' per-frame control byte
+    return net.currptr{}
 
 PRI cog_Timer{}
 
