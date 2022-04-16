@@ -429,32 +429,7 @@ PRI Process_EthII(): msg_t | ether_t
     { IPv4? }
     elseif (ether_t == ETYP_IPV4)
         ser.str(@"[IPv4]")
-        net.rd_ip_header()
-        { UDP? }
-        if (net.ip_l4proto() == net.UDP)
-            ser.str(@"[UDP]")
-            net.rd_udp_header()
-            { BOOTP? }
-            if (net.udp_destport() == svc.BOOTP_C)
-                ser.str(@"[BOOTP]")
-                net.rd_bootp_msg()
-                { BOOTP reply? }
-                if (net.bootp_opcode() == net.BOOT_REPL)
-                    ser.str(@"[REPLY]")
-                    if (net.dhcp_msgtype() == net.DHCPOFFER)
-                        ser.strln(@"[DHCPOFFER]")
-                        return net.DHCPOFFER
-                    if (net.dhcp_msgtype() == net.DHCPACK)
-                        ser.strln(@"[DHCPACK]")
-                        return net.DHCPACK
-            else
-                ser.newline()
-        elseif (net.ip_l4proto() == net.TCP)
-            ser.strln(@"[TCP]")
-        { ICMP? }
-        elseif (net.ip_l4proto() == net.ICMP)
-            ser.str(@"[ICMP]")
-            process_icmp()
+        msg_t := process_ipv4()
     else
         ser.str(@"[Unknown ethertype: ")
         ser.hex(ether_t, 4)
@@ -501,6 +476,35 @@ PRI Process_ICMP() | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
                     ser.printf(@"[TX: %d][IPv4][ICMP][ECHO_REPL]\n", net.currptr())
                     eth.txpayload(@_buff, net.currptr())
                     sendframe()
+
+PRI Process_IPV4(): msg
+' Process IPv4 datagrams
+    net.rd_ip_header()
+    case net.ip_l4proto()
+        { UDP? }
+        net.UDP:
+            ser.str(@"[UDP]")
+            net.rd_udp_header()
+            { BOOTP? }
+            if (net.udp_destport() == svc.BOOTP_C)
+                ser.str(@"[BOOTP]")
+                net.rd_bootp_msg()
+                { BOOTP reply? }
+                if (net.bootp_opcode() == net.BOOT_REPL)
+                    ser.str(@"[REPLY]")
+                    if (net.dhcp_msgtype() == net.DHCPOFFER)
+                        ser.strln(@"[DHCPOFFER]")
+                        return net.DHCPOFFER
+                    if (net.dhcp_msgtype() == net.DHCPACK)
+                        ser.strln(@"[DHCPACK]")
+                        return net.DHCPACK
+            else
+                ser.newline()
+        net.TCP:
+            ser.strln(@"[TCP]")
+        net.ICMP:
+            ser.str(@"[ICMP]")
+            process_icmp()
 
 PRI SendFrame()
 ' Send queued ethernet frame
