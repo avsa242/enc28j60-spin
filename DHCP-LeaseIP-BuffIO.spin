@@ -264,7 +264,7 @@ PUB DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.setptr(frm_end)
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen((net.ip_hdrlen{})+net.udp_hdrlen{}+net.dhcp_msglen{})
+    net.ip_setdgramlen(net.ip_hdrlen{} + net.udp_hdrlen{} + net.dhcp_msglen{})
     net.setptr(ip_st)
     net.wr_ip_header{}
     ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
@@ -331,7 +331,7 @@ PUB DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.setptr(frm_end)
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen((net.ip_hdrlen{})+net.udp_hdrlen{}+net.dhcp_msglen{})
+    net.ip_setdgramlen(net.ip_hdrlen{} + net.udp_hdrlen{} + net.dhcp_msglen{})
     net.setptr(ip_st)
     net.wr_ip_header{}
     ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
@@ -488,18 +488,15 @@ PRI ProcessFrame{}: msg_t | ether_t
         ser.hex(ether_t, 4)
         ser.strln(@"]")
 
-    bytefill(@_buff, 0, MTU_MAX)
-
 PRI TCP_SendACK | ip_st, ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
 
-    bytefill(@_buff, 0, MTU_MAX)                ' clear frame buffer
     startframe{}
     ip_st := ethii_reply
     tcp_st := ipv4_reply
     frm_end := tcp_reply
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen((net.ip_hdrlen{}) + (net.tcp_hdrlen{}) )
+    net.ip_setdgramlen(net.ip_hdrlen{} + net.tcp_hdrlen{})
     net.setptr(ip_st)
     net.wr_ip_header{}
     ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
@@ -599,7 +596,7 @@ PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
             frm_end := net.currptr{}
 
             { update IP header with length: IP header + ICMP message + echo data }
-            net.ip_setdgramlen((net.ip_hdrlen{})+net.icmp_msglen{}+ICMP_DAT_LEN)
+            net.ip_setdgramlen(net.ip_hdrlen{} + net.icmp_msglen{} + ICMP_DAT_LEN)
             net.setptr(ip_st)
             net.wr_ip_header{}
             ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
@@ -607,7 +604,7 @@ PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
             net.wrword_msbf(ipchk)
             net.setptr(frm_end)
 
-            icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen{}+ICMP_DAT_LEN, $00)
+            icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen{} + ICMP_DAT_LEN, $00)
             net.setptr(icmp_st+net#IDX_ICMP_CKSUM)
             net.wrword_msbf(icmpchk)
             net.setptr(frm_end)
@@ -623,8 +620,6 @@ PRI SendFrame{}
     eth.fifotxstart(TXSTART)                    ' ETXSTL: TXSTART
     eth.fifotxend(TXSTART+net.currptr{})        ' ETXNDL: TXSTART+currptr
     eth.txenabled(true)                         ' send
-
-    bytefill(@_buff, 0, MTU_MAX)                ' clear frame buffer
 
 PRI ShowARPMsg(opcode)
 ' Show Wireshark-ish messages about the ARP message received
@@ -666,7 +661,7 @@ PRI ShowMACOUI(ptr_msg, ptr_addr) | i
             ser.char(":")
 
 PRI StartFrame{}: pos
-' Reset pointers, and add control byte to frame
+
     eth.fifowrptr(TXSTART)
     net.setptr(0)
     net.wr_byte($00)                            ' per-frame control byte
