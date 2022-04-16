@@ -206,7 +206,7 @@ PUB Main{} | rn
                         on our lease }
                     ser.printf1(@"Lease time remaining: %dsec\n", _timer_set)
 
-PUB DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
+PRI DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
 ' Construct a DHCPDISCOVER message, and transmit it
     longfill(@ethii_st, 0, 4)
     startframe{}
@@ -272,12 +272,11 @@ PUB DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
 
-'    ser.hexdump(@_buff, 0, 4, frm_end, 16)
     ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPDISCOVER]\n", frm_end)
     eth.txpayload(@_buff, frm_end)
     sendframe{}
 
-PUB DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
+PRI DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
 ' Construct a DHCPREQUEST message, and transmit it
     longfill(@ethii_st, 0, 4)
     startframe{}
@@ -339,12 +338,11 @@ PUB DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
 
-'    ser.hexdump(@_buff, 0, 4, frm_end, 16)
     ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPREQUEST]\n", net.currptr{})
     eth.txpayload(@_buff, net.currptr{})
     sendframe{}
 
-PUB ARP_Reply{}
+PRI ARP_Reply{}
 ' Construct ARP reply message
     startframe{}
     ethii_reply{}
@@ -361,14 +359,14 @@ PUB ARP_Reply{}
     eth.txpayload(@_buff, net.currptr{})
     sendframe{}
 
-PUB EthII_Reply{}: pos
+PRI EthII_Reply{}: pos
 ' Set up/write Ethernet II frame as a reply to last received frame
     net.ethii_setdestaddr(net.ethii_srcaddr{})
     net.ethii_setsrcaddr(@_mac_local)
     net.wr_ethii_frame{}
     return net.currptr{}
 
-PUB IPV4_Reply{}: pos
+PRI IPV4_Reply{}: pos
 ' Set up/write IPv4 header as a reply to last received header
     net.ip_sethdrchk(0)
     net.ip_setdestaddr(net.ip_srcaddr{})
@@ -376,7 +374,7 @@ PUB IPV4_Reply{}: pos
     net.wr_ip_header{}
     return net.currptr{}
 
-PUB GetFrame{} | rdptr
+PRI GetFrame{} | rdptr
 ' Receive frame from ethernet device
     { get receive status vector }
     eth.fifordptr(_nxtpkt)
@@ -401,7 +399,6 @@ PUB GetFrame{} | rdptr
 
 PRI ProcessARP{} | opcode
 ' Process ARP message
-'    ser.hexdump(@_buff+net.currptr{}, 0, 4, _rxlen, 16)
     net.rd_arp_msg{}
     showarpmsg(opcode := net.arp_opcode{})
     case opcode
@@ -419,7 +416,6 @@ PRI ProcessARP{} | opcode
 
 PRI ProcessFrame{}: msg_t | ether_t
 ' Hand off the frame data to the appropriate handler
-'    ser.hexdump(@_buff, 0, 4, _rxlen, 16)
     net.init(@_buff)
     net.rd_ethii_frame{}
     ether_t := net.ethii_ethertype{}
@@ -427,7 +423,6 @@ PRI ProcessFrame{}: msg_t | ether_t
     { ARP? }
     if (ether_t == ETYP_ARP)
         ser.str(@"[ARP]")
-'        ser.hexdump(@_buff, 0, 4, _rxlen, 16)
         processarp{}
     { IPv4? }
     elseif (ether_t == ETYP_IPV4)
@@ -454,26 +449,6 @@ PRI ProcessFrame{}: msg_t | ether_t
                 ser.newline{}
         elseif (net.ip_l4proto{} == net#TCP)
             ser.strln(@"[TCP]")
-            net.rd_tcp_header{}
-            net.rd_tcp_opts{}
-            ser.hexdump(@_buff, 0, 4, _rxlen, 16)
-            ser.printf1(@"Source port: %d\n", net.tcp_srcport{})
-            ser.printf1(@"Dest port: %d\n", net.tcp_destport{})
-            ser.printf1(@"Seq number: %d\n", net.tcp_seqnr{})
-            ser.printf1(@"Ack number: %d\n", net.tcp_acknr{})
-            ser.printf1(@"Header length: %d\n", net.tcp_hdrlen{})
-            ser.str(@"Flags: ")
-            ser.bin(net.tcp_flags{}, 9)
-            showtcp_flags(net.tcp_flags{})
-            ser.newline{}
-            ser.printf1(@"Window: %d\n", net.tcp_window{})
-            ser.printf1(@"Checksum: %x\n", net.tcp_chksum{})
-            ser.printf1(@"Urgent pointer: %x\n", net.tcp_urgentptr{})
-            ser.printf1(@"TCP MSS: %d\n", net.tcp_mss{})
-            ser.printf1(@"TCP SACK permitted: %d\n", net.tcp_sackperm{})
-            ser.printf1(@"Timestamp: %d\n", net.tcp_timest{})
-            ser.printf1(@"Timestamp (echo): %d\n", net.tcp_timest_echo{})
-            tcp_sendack{}
         { ICMP? }
         elseif (net.ip_l4proto{} == net#ICMP)
             ser.str(@"[ICMP]")
@@ -488,98 +463,8 @@ PRI ProcessFrame{}: msg_t | ether_t
         ser.hex(ether_t, 4)
         ser.strln(@"]")
 
-PRI TCP_SendACK | ip_st, ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
-
-    startframe{}
-    ip_st := ethii_reply
-    tcp_st := ipv4_reply
-    frm_end := tcp_reply
-
-    { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen(net.ip_hdrlen{} + net.tcp_hdrlen{})
-    net.setptr(ip_st)
-    net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
-    net.setptr(ip_st+net#IP_CKSUM)
-    net.wrword_msbf(ipchk)
-    net.setptr(frm_end)
-
-    { update TCP header with checksum }
-    _tcp_ph_src := net.ip_srcaddr{}
-    _tcp_ph_dest := net.ip_destaddr{}
-    _tcp_ph_proto := net.ip_l4proto{}
-
-    tmp := net.tcp_hdrlen{}             'XXX got to be a better way...
-    _tcp_ph_len.byte[0] := tmp.byte[1]  '
-    _tcp_ph_len.byte[1] := tmp.byte[0]  '
-
-    { calc checksum of TCP/IP pseudo header, then the TCP header }
-    pseudo_chk := crc.inetchksum(@_tcp_ph_src, 12, $00)
-    tcpchk := crc.inetchksum(@_buff[tcp_st], net.tcp_hdrlen{}, pseudo_chk)
-    net.setptr(tcp_st+net#IDX_TCP_CKSUM)
-    net.wrword_msbf(tcpchk)
-    net.setptr(frm_end)
-    ser.hexdump(@_buff, 0, 4, net.currptr{}, 16)
-    eth.txpayload(@_buff, net.currptr{})
-    sendframe{}
-
-DAT
-    ' XXX var?
-    _tcp_ph_src    long $00_00_00_00
-    _tcp_ph_dest   long $00_00_00_00
-    _tcp_ph_zero   byte $00
-    _tcp_ph_proto  byte net#TCP
-    _tcp_ph_len    word $00_00
-
-PRI TCP_Reply | tmp
-
-    tmp := net.tcp_srcport{}
-    net.tcp_setsrcport(net.tcp_destport{})
-    net.tcp_setdestport(tmp)
-    net.tcp_setacknr(net.tcp_seqnr{}+1)
-    net.tcp_setseqnr(0) 'xxx what?
-    net.tcp_setflags(net#SYN | net#ACK)
-    net.tcp_setchksum(0)
-    net.tcp_sethdrlen(40)
-    net.tcp_seturgentptr(0)
-    net.wr_tcp_header{}
-    return net.currptr{}
-
-PRI ShowTCP_Flags(flags) | i
-' Display the TCP header's flag bits as symbols
-    ser.str(@": [")
-    repeat i from 8 to 0
-        if (flags & (|< i))
-            ser.fgcolor(ser#BRIGHT+ser#WHITE)
-            ser.str(@_tcp_flagstr[i*6])
-        else
-            ser.fgcolor(ser#BRIGHT+ser#BLACK)
-            ser.str(@_tcp_flagstr[i*6])
-    ser.fgcolor(ser#WHITE)
-    ser.char("]")
-
-DAT
-
-    _tcp_flagstr
-        byte    " FIN ", 0
-        byte    " SYN ", 0
-        byte    " RST ", 0
-        byte    " PSH ", 0
-        byte    " ACK ", 0
-        byte    " URG ", 0
-        byte    " ECN ", 0
-        byte    " CWR ", 0
-        byte    " NON ", 0
-
 PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
 ' Process ICMP echo requests from a remote node
-'    ser.hexdump(@_buff, 0, 4, _rxlen, 16)
-'    ser.printf1(@"ICMP message type: %d\n", net.icmp_msgtype{})
-'    ser.printf1(@"ICMP code/subtype: %d\n", net.icmp_code{})
-'    ser.printf1(@"ICMP checksum: %x\n", net.icmp_chksum{})
-'    ser.printf1(@"ICMP identifier: %x\n", net.icmp_ident{})
-'    ser.printf1(@"ICMP sequence number: %d\n", net.icmp_seqnr{})
-'    ser.printf1(@"ICMP timestamp: %d\n", net.icmp_timestamp{})
     if (_dhcp_state => BOUND)
         if (net.ip_destaddr{} == _my_ip)
             eth_st := startframe{}
@@ -616,7 +501,6 @@ PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
 PRI SendFrame{}
 ' Send queued ethernet frame
 { send packet }
-'    ser.hexdump(@_buff, 0, 4, net.currptr{}, 16)
     eth.fifotxstart(TXSTART)                    ' ETXSTL: TXSTART
     eth.fifotxend(TXSTART+net.currptr{})        ' ETXNDL: TXSTART+currptr
     eth.txenabled(true)                         ' send
@@ -661,7 +545,8 @@ PRI ShowMACOUI(ptr_msg, ptr_addr) | i
             ser.char(":")
 
 PRI StartFrame{}: pos
-
+' Reset pointers, and add control byte to frame
+    bytefill(@_buff, 0, MTU_MAX)                ' clear frame buffer
     eth.fifowrptr(TXSTART)
     net.setptr(0)
     net.wr_byte($00)                            ' per-frame control byte
