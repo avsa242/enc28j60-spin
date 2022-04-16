@@ -218,7 +218,7 @@ PUB DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
 
     ip_st := net.currptr{}                      ' mark start of IPV4 data
     net.ip_setversion(4)
-    net.ip_sethdrlen(5)
+    net.ip_sethdrlen(20)
     net.ip_setdscp(0)
     net.ip_setecn(0)
     net.ip_setdgramlen(0)
@@ -264,10 +264,10 @@ PUB DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.setptr(frm_end)
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.udp_hdrlen{}+net.dhcp_msglen{})
+    net.ip_setdgramlen((net.ip_hdrlen{})+net.udp_hdrlen{}+net.dhcp_msglen{})
     net.setptr(ip_st)
     net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4, $00)
+    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
     net.setptr(ip_st+net#IP_CKSUM)
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
@@ -289,7 +289,7 @@ PUB DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
 
     ip_st := net.currptr{}
     net.ip_setversion(4)
-    net.ip_sethdrlen(5)
+    net.ip_sethdrlen(20)
     net.ip_setdscp(0)
     net.ip_setecn(0)
     net.ip_setdgramlen(0)
@@ -331,10 +331,10 @@ PUB DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.setptr(frm_end)
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.udp_hdrlen{}+net.dhcp_msglen{})
+    net.ip_setdgramlen((net.ip_hdrlen{})+net.udp_hdrlen{}+net.dhcp_msglen{})
     net.setptr(ip_st)
     net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4, $00)
+    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
     net.setptr(ip_st+net#IP_CKSUM)
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
@@ -499,10 +499,10 @@ PRI TCP_SendACK | ip_st, ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
     frm_end := tcp_reply
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen((net.ip_hdrlen{}*4) + (net.tcp_hdrlen{}) )
+    net.ip_setdgramlen((net.ip_hdrlen{}) + (net.tcp_hdrlen{}) )
     net.setptr(ip_st)
     net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4, $00)
+    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
     net.setptr(ip_st+net#IP_CKSUM)
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
@@ -599,10 +599,10 @@ PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
             frm_end := net.currptr{}
 
             { update IP header with length: IP header + ICMP message + echo data }
-            net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.icmp_msglen{}+ICMP_DAT_LEN)
+            net.ip_setdgramlen((net.ip_hdrlen{})+net.icmp_msglen{}+ICMP_DAT_LEN)
             net.setptr(ip_st)
             net.wr_ip_header{}
-            ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4, $00)
+            ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
             net.setptr(ip_st+net#IP_CKSUM)
             net.wrword_msbf(ipchk)
             net.setptr(frm_end)
