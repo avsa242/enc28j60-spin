@@ -399,6 +399,7 @@ PRI GetFrame{} | rdptr
 
 PRI Process_ARP{} | opcode
 ' Process ARP message
+    ser.str(@"[ARP]")
     net.rd_arp_msg{}
     showarpmsg(opcode := net.arp_opcode{})
     case opcode
@@ -414,32 +415,47 @@ PRI Process_ARP{} | opcode
                     ser.fgcolor(ser#WHITE)
         net#ARP_REPL:
 
+PRI Process_BOOTP{}
+' Process BOOTP/DHCP message
+    ser.str(@"[BOOTP]")
+    net.rd_bootp_msg{}
+    { BOOTP reply? }
+    if (net.bootp_opcode{} == net#BOOT_REPL)
+        ser.str(@"[REPLY]")
+        if (net.dhcp_msgtype{} == net#DHCPOFFER)
+            ser.strln(@"[DHCPOFFER]")
+            return net#DHCPOFFER
+        if (net.dhcp_msgtype{} == net#DHCPACK)
+            ser.strln(@"[DHCPACK]")
+            return net#DHCPACK
+
 PRI Process_EthII{}: msg_t | ether_t
-' Hand off the frame data to the appropriate handler
+' Process Ethernet-II frame
     net.init(@_buff)
     net.rd_ethii_frame{}
     ether_t := net.ethii_ethertype{}
 
-    { ARP? }
+{ route to the processor appropriate to the ethertype }
     if (ether_t == ETYP_ARP)
-        ser.str(@"[ARP]")
+    { ARP }
         process_arp{}
-    { IPv4? }
     elseif (ether_t == ETYP_IPV4)
-        ser.str(@"[IPv4]")
+    { IPv4 }
         msg_t := process_ipv4{}
     else
+    { unsupported/unknown }
         ser.str(@"[Unknown ethertype: ")
         ser.hex(ether_t, 4)
         ser.strln(@"]")
 
 PRI Process_ICMP{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
-' Process ICMP echo requests from a remote node
+' Process ICMP messages
     { if this node is bound to an IP and the echo request was directed to it, }
     {   send a reply }
     net.rd_icmp_msg{}
     case net.icmp_msgtype{}
         net#ECHO_REQ:
+        { ECHO request (ping) }
             ser.strln(@"[ECHO_REQ]")
             net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
             if (_dhcp_state => BOUND)
@@ -477,6 +493,7 @@ PRI Process_ICMP{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
 
 PRI Process_IPV4{}: msg
 ' Process IPv4 datagrams
+    ser.str(@"[IPv4]")
     net.rd_ip_header{}
     case net.ip_l4proto{}
         { UDP? }
@@ -485,17 +502,7 @@ PRI Process_IPV4{}: msg
             net.rd_udp_header{}
             { BOOTP? }
             if (net.udp_destport{} == svc#BOOTP_C)
-                ser.str(@"[BOOTP]")
-                net.rd_bootp_msg{}
-                { BOOTP reply? }
-                if (net.bootp_opcode{} == net#BOOT_REPL)
-                    ser.str(@"[REPLY]")
-                    if (net.dhcp_msgtype{} == net#DHCPOFFER)
-                        ser.strln(@"[DHCPOFFER]")
-                        return net#DHCPOFFER
-                    if (net.dhcp_msgtype{} == net#DHCPACK)
-                        ser.strln(@"[DHCPACK]")
-                        return net#DHCPACK
+                msg := process_bootp{}
             else
                 ser.newline{}
         net#TCP:
