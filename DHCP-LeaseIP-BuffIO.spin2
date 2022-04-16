@@ -142,7 +142,7 @@ PUB Main() | rn
                 repeat
                     if (eth.pktcnt())           ' pkt received?
                         getframe()
-                        if (processframe() == net.DHCPOFFER)
+                        if (process_ethii() == net.DHCPOFFER)
                             { offer received from DHCP server; request it }
                             _dhcp_state := REQUESTING
                             quit                ' got an offer; next state
@@ -166,7 +166,7 @@ PUB Main() | rn
                 repeat
                     if (eth.pktcnt())
                         getframe()
-                        if (processframe() == net.DHCPACK)
+                        if (process_ethii() == net.DHCPACK)
                             { server acknowledged request; we're now bound
                                 to this IP }
                             _dhcp_state := BOUND
@@ -202,7 +202,7 @@ PUB Main() | rn
                         the server sending ARP requests confirming we're
                         bound to the IP }
                     getframe()
-                    processframe()
+                    process_ethii()
                 if (ser.rxcheck() == "l")
                     { press 'l' at any time to see how much time we have left
                         on our lease }
@@ -399,7 +399,7 @@ PRI GetFrame() | rdptr
 
     eth.fiforxrdptr(rdptr)
 
-PRI ProcessARP() | opcode
+PRI Process_ARP() | opcode
 ' Process ARP message
     net.rd_arp_msg()
     showarpmsg(opcode := net.arp_opcode())
@@ -416,7 +416,7 @@ PRI ProcessARP() | opcode
                     ser.fgcolor(ser.WHITE)
         net.ARP_REPL:
 
-PRI ProcessFrame(): msg_t | ether_t
+PRI Process_EthII(): msg_t | ether_t
 ' Hand off the frame data to the appropriate handler
     net.init(@_buff)
     net.rd_ethii_frame()
@@ -425,7 +425,7 @@ PRI ProcessFrame(): msg_t | ether_t
     { ARP? }
     if (ether_t == ETYP_ARP)
         ser.str(@"[ARP]")
-        processarp()
+        process_arp()
     { IPv4? }
     elseif (ether_t == ETYP_IPV4)
         ser.str(@"[IPv4]")
@@ -454,55 +454,57 @@ PRI ProcessFrame(): msg_t | ether_t
         { ICMP? }
         elseif (net.ip_l4proto() == net.ICMP)
             ser.str(@"[ICMP]")
-            net.rd_icmp_msg()
-            { ECHO_REQ? }
-            if (net.icmp_msgtype() == net.ECHO_REQ)
-                ser.strln(@"[ECHO_REQ]")
-                net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
-                processicmp_echoreq()
+            process_icmp()
     else
         ser.str(@"[Unknown ethertype: ")
         ser.hex(ether_t, 4)
         ser.strln(@"]")
 
-PRI ProcessICMP_EchoReq() | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
+PRI Process_ICMP() | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
 ' Process ICMP echo requests from a remote node
-    if (_dhcp_state >= BOUND)
-        if (net.ip_destaddr() == _my_ip)
-            eth_st := startframe()
-            ip_st := ethii_reply()
-            icmp_st := ipv4_reply()
+    { if this node is bound to an IP and the echo request was directed to it, }
+    {   send a reply }
+    net.rd_icmp_msg()
+    case net.icmp_msgtype()
+        net.ECHO_REQ:
+            ser.strln(@"[ECHO_REQ]")
+            net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
+            if (_dhcp_state >= BOUND)
+                if (net.ip_destaddr() == _my_ip)
+                    eth_st := startframe()
+                    ip_st := ethii_reply()
+                    icmp_st := ipv4_reply()
 
-            net.icmp_setchksum(0)
-            net.icmp_setmsgtype(net.ECHO_REPL)
-            net.icmp_setseqnr(net.icmp_seqnr())
-            net.wr_icmp_msg()
+                    net.icmp_setchksum(0)
+                    net.icmp_setmsgtype(net.ECHO_REPL)
+                    net.icmp_setseqnr(net.icmp_seqnr())
+                    net.wr_icmp_msg()
 
-            { write the echo data that was received in the request }
-            net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
-            frm_end := net.currptr()
+                    { write the echo data that was received in the request }
+                    net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
+                    frm_end := net.currptr()
 
-            { update IP header with length: IP header + ICMP message + echo data }
-            net.ip_setdgramlen(net.ip_hdrlen() + net.icmp_msglen() + ICMP_DAT_LEN)
-            net.setptr(ip_st)
-            net.wr_ip_header()
-            ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen(), $00)
-            net.setptr(ip_st+net.IP_CKSUM)
-            net.wrword_msbf(ipchk)
-            net.setptr(frm_end)
+                    { update IP header with length: IP header + ICMP message + echo data }
+                    net.ip_setdgramlen(net.ip_hdrlen() + net.icmp_msglen() + ICMP_DAT_LEN)
+                    net.setptr(ip_st)
+                    net.wr_ip_header()
+                    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen(), $00)
+                    net.setptr(ip_st+net.IP_CKSUM)
+                    net.wrword_msbf(ipchk)
+                    net.setptr(frm_end)
 
-            icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen() + ICMP_DAT_LEN, $00)
-            net.setptr(icmp_st+net.IDX_ICMP_CKSUM)
-            net.wrword_msbf(icmpchk)
-            net.setptr(frm_end)
+                    icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen() + ICMP_DAT_LEN, $00)
+                    net.setptr(icmp_st+net.IDX_ICMP_CKSUM)
+                    net.wrword_msbf(icmpchk)
+                    net.setptr(frm_end)
 
-            ser.printf(@"[TX: %d][IPv4][ICMP][ECHO_REPL]\n", net.currptr())
-            eth.txpayload(@_buff, net.currptr())
-            sendframe()
+                    ser.printf(@"[TX: %d][IPv4][ICMP][ECHO_REPL]\n", net.currptr())
+                    eth.txpayload(@_buff, net.currptr())
+                    sendframe()
 
 PRI SendFrame()
 ' Send queued ethernet frame
-{ send packet }
+    { set TX FIFO parameters to point to assembled ethernet frame }
     eth.fifotxstart(TXSTART)                    ' ETXSTL: TXSTART
     eth.fifotxend(TXSTART+net.currptr())        ' ETXNDL: TXSTART+currptr
     eth.txenabled(true)                         ' send
