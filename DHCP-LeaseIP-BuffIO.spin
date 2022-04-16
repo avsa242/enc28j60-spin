@@ -12,7 +12,7 @@
             ethernet controller)
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Apr 10, 2022
+    Updated Apr 16, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -267,7 +267,7 @@ PUB DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.udp_hdrlen{}+net.dhcp_msglen{})
     net.setptr(ip_st)
     net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4)
+    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4, $00)
     net.setptr(ip_st+net#IP_CKSUM)
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
@@ -334,7 +334,7 @@ PUB DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.udp_hdrlen{}+net.dhcp_msglen{})
     net.setptr(ip_st)
     net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4)
+    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4, $00)
     net.setptr(ip_st+net#IP_CKSUM)
     net.wrword_msbf(ipchk)
     net.setptr(frm_end)
@@ -455,12 +455,13 @@ PRI ProcessFrame{}: msg_t | ether_t
         elseif (net.ip_l4proto{} == net#TCP)
             ser.strln(@"[TCP]")
             net.rd_tcp_header{}
+            net.rd_tcp_opts{}
             ser.hexdump(@_buff, 0, 4, _rxlen, 16)
             ser.printf1(@"Source port: %d\n", net.tcp_srcport{})
             ser.printf1(@"Dest port: %d\n", net.tcp_destport{})
             ser.printf1(@"Seq number: %d\n", net.tcp_seqnr{})
             ser.printf1(@"Ack number: %d\n", net.tcp_acknr{})
-            ser.printf1(@"Header length: %d\n", net.tcp_hdrlen{}*4)
+            ser.printf1(@"Header length: %d\n", net.tcp_hdrlen{})
             ser.str(@"Flags: ")
             ser.bin(net.tcp_flags{}, 9)
             showtcp_flags(net.tcp_flags{})
@@ -468,6 +469,11 @@ PRI ProcessFrame{}: msg_t | ether_t
             ser.printf1(@"Window: %d\n", net.tcp_window{})
             ser.printf1(@"Checksum: %x\n", net.tcp_chksum{})
             ser.printf1(@"Urgent pointer: %x\n", net.tcp_urgentptr{})
+            ser.printf1(@"TCP MSS: %d\n", net.tcp_mss{})
+            ser.printf1(@"TCP SACK permitted: %d\n", net.tcp_sackperm{})
+            ser.printf1(@"Timestamp: %d\n", net.tcp_timest{})
+            ser.printf1(@"Timestamp (echo): %d\n", net.tcp_timest_echo{})
+            tcp_sendack
         { ICMP? }
         elseif (net.ip_l4proto{} == net#ICMP)
             ser.str(@"[ICMP]")
@@ -483,6 +489,64 @@ PRI ProcessFrame{}: msg_t | ether_t
         ser.strln(@"]")
 
     bytefill(@_buff, 0, MTU_MAX)
+
+PRI TCP_SendACK | ip_st, ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
+
+    bytefill(@_buff, 0, MTU_MAX)                ' clear frame buffer
+    startframe{}
+    ip_st := ethii_reply
+    tcp_st := ipv4_reply
+    frm_end := tcp_reply
+
+    { update IP header with length: IP header + UDP header + DHCP message }
+    net.ip_setdgramlen((net.ip_hdrlen{}*4) + (net.tcp_hdrlen{}) )
+    net.setptr(ip_st)
+    net.wr_ip_header{}
+    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4, $00)
+    net.setptr(ip_st+net#IP_CKSUM)
+    net.wrword_msbf(ipchk)
+    net.setptr(frm_end)
+
+    { update TCP header with checksum }
+    _tcp_ph_src := net.ip_srcaddr{}
+    _tcp_ph_dest := net.ip_destaddr{}
+    _tcp_ph_proto := net.ip_l4proto{}
+
+    tmp := net.tcp_hdrlen{}             'XXX got to be a better way...
+    _tcp_ph_len.byte[0] := tmp.byte[1]  '
+    _tcp_ph_len.byte[1] := tmp.byte[0]  '
+
+    { calc checksum of TCP/IP pseudo header, then the TCP header }
+    pseudo_chk := crc.inetchksum(@_tcp_ph_src, 12, $00)
+    tcpchk := crc.inetchksum(@_buff[tcp_st], net.tcp_hdrlen{}, pseudo_chk)
+    net.setptr(tcp_st+net#IDX_TCP_CKSUM)
+    net.wrword_msbf(tcpchk)
+    net.setptr(frm_end)
+    ser.hexdump(@_buff, 0, 4, net.currptr{}, 16)
+    eth.txpayload(@_buff, net.currptr{})
+    sendframe{}
+
+DAT
+    ' XXX var?
+    _tcp_ph_src    long $00_00_00_00
+    _tcp_ph_dest   long $00_00_00_00
+    _tcp_ph_zero   byte $00
+    _tcp_ph_proto  byte net#TCP
+    _tcp_ph_len    word $00_00
+
+PRI TCP_Reply | tmp
+
+    tmp := net.tcp_srcport{}
+    net.tcp_setsrcport(net.tcp_destport{})
+    net.tcp_setdestport(tmp)
+    net.tcp_setacknr(net.tcp_seqnr{}+1)
+    net.tcp_setseqnr(0) 'xxx what?
+    net.tcp_setflags(net#SYN | net#ACK)
+    net.tcp_setchksum(0)
+    net.tcp_sethdrlen(40)
+    net.tcp_seturgentptr(0)
+    net.wr_tcp_header{}
+    return net.currptr{}
 
 PRI ShowTCP_Flags(flags) | i
 ' Display the TCP header's flag bits as symbols
@@ -538,12 +602,12 @@ PRI ProcessICMP_EchoReq{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
             net.ip_setdgramlen((net.ip_hdrlen{}*4)+net.icmp_msglen{}+ICMP_DAT_LEN)
             net.setptr(ip_st)
             net.wr_ip_header{}
-            ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4)
+            ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}*4, $00)
             net.setptr(ip_st+net#IP_CKSUM)
             net.wrword_msbf(ipchk)
             net.setptr(frm_end)
 
-            icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen{}+ICMP_DAT_LEN)
+            icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen{}+ICMP_DAT_LEN, $00)
             net.setptr(icmp_st+net#IDX_ICMP_CKSUM)
             net.wrword_msbf(icmpchk)
             net.setptr(frm_end)
