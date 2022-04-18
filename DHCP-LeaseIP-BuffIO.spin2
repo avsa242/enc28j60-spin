@@ -486,7 +486,7 @@ PRI Process_ICMP() | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
                     net.setptr(frm_end)
 
                     icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen() + ICMP_DAT_LEN, $00)
-                    net.setptr(icmp_st+net.IDX_ICMP_CKSUM)
+                    net.setptr(icmp_st+net.ICMP_CKSUM)
                     net.wrword_msbf(icmpchk)
                     net.setptr(frm_end)
 
@@ -509,7 +509,9 @@ PRI Process_IPV4(): msg
             else
                 ser.newline()
         net.TCP:
+#ifdef TCP_TEL
             process_tcp{}
+#endif
         net.ICMP:
             process_icmp()
 

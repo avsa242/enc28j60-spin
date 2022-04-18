@@ -11,7 +11,7 @@
 
     NOTE: Requires DHCP-LeaseIP-BuffIO.spin2
 }
-
+#define TCP_TEL
 #include "DHCP-LeaseIP-BuffIO.spin2"
 
 VAR
@@ -75,7 +75,7 @@ PRI Process_TCP() | isn, hdr_len, paylen_rx
                     {   show a hexdump of it; skip over the ethernet-II header, }
                     {   the IP header, and the TCP header + options }
                     if (paylen_rx > 0)
-                        ser.hexdump(@_buff+14+hdr_len, 0, 4, paylen_rx, (16 <# paylen_rx) )
+                        ser.hexdump(@_buff+net#ETH_FRM_SZ+hdr_len, 0, 4, paylen_rx, (16 <# paylen_rx) )
                     _cli_seq_nr += paylen_rx    ' inc their seq nr by sz of payld rx'd
                     _seq_nr := net.tcp_acknr()  ' maintain our seq nr based on their ack
                     tcp_send(net.ACK_BIT, 0, 0)
