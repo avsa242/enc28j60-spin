@@ -452,6 +452,7 @@ PRI Process_ICMP{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
 ' Process ICMP messages
     { if this node is bound to an IP and the echo request was directed to it, }
     {   send a reply }
+    ser.str(@"[ICMP]")
     net.rd_icmp_msg{}
     case net.icmp_msgtype{}
         net#ECHO_REQ:
@@ -506,9 +507,8 @@ PRI Process_IPV4{}: msg
             else
                 ser.newline{}
         net#TCP:
-            ser.strln(@"[TCP]")
+            process_tcp{}
         net#ICMP:
-            ser.str(@"[ICMP]")
             process_icmp{}
 
 PRI SendFrame{}
