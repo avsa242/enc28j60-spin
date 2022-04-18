@@ -12,7 +12,7 @@
             ethernet controller)
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Apr 16, 2022
+    Updated Apr 18, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -85,6 +85,8 @@ VAR
 
     { receive status vector }
     word _nxtpkt, _rxlen, _rxstatus
+
+    word _ip_st
 
     byte _buff[TXBUFFSZ], _icmp_data[ICMP_DAT_LEN]
     byte _attempt
@@ -206,7 +208,7 @@ PUB Main{} | rn
                         on our lease }
                     ser.printf1(@"Lease time remaining: %dsec\n", _timer_set)
 
-PRI DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
+PRI DHCP_Discover{} | ethii_st, udp_st, dhcp_st, ipchk, frm_end
 ' Construct a DHCPDISCOVER message, and transmit it
     longfill(@ethii_st, 0, 4)
     startframe{}
@@ -216,7 +218,7 @@ PRI DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.ethii_setethertype(ETYP_IPV4)
     net.wr_ethii_frame{}
 
-    ip_st := net.currptr{}                      ' mark start of IPV4 data
+    _ip_st := net.currptr{}                     ' mark start of IPV4 data
     net.ip_setversion(4)
     net.ip_sethdrlen(20)
     net.ip_setdscp(0)
@@ -263,20 +265,13 @@ PRI DHCP_Discover{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.wrword_msbf(net.udp_hdrlen{} + net.dhcp_msglen{})
     net.setptr(frm_end)
 
-    { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen(net.ip_hdrlen{} + net.udp_hdrlen{} + net.dhcp_msglen{})
-    net.setptr(ip_st)
-    net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
-    net.setptr(ip_st+net#IP_CKSUM)
-    net.wrword_msbf(ipchk)
-    net.setptr(frm_end)
+    ip_updchksum(net.ip_hdrlen{} + net.udp_hdrlen{} + net.dhcp_msglen{})
 
     ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPDISCOVER]\n", frm_end)
     eth.txpayload(@_buff, frm_end)
     sendframe{}
 
-PRI DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
+PRI DHCP_Request{} | ethii_st, udp_st, dhcp_st, ipchk, frm_end
 ' Construct a DHCPREQUEST message, and transmit it
     longfill(@ethii_st, 0, 4)
     startframe{}
@@ -286,7 +281,7 @@ PRI DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.ethii_setethertype(ETYP_IPV4)
     net.wr_ethii_frame{}
 
-    ip_st := net.currptr{}
+    _ip_st := net.currptr{}
     net.ip_setversion(4)
     net.ip_sethdrlen(20)
     net.ip_setdscp(0)
@@ -329,14 +324,7 @@ PRI DHCP_Request{} | ethii_st, ip_st, udp_st, dhcp_st, ipchk, frm_end
     net.wrword_msbf(net.udp_hdrlen{} + net.dhcp_msglen{})
     net.setptr(frm_end)
 
-    { update IP header with length: IP header + UDP header + DHCP message }
-    net.ip_setdgramlen(net.ip_hdrlen{} + net.udp_hdrlen{} + net.dhcp_msglen{})
-    net.setptr(ip_st)
-    net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
-    net.setptr(ip_st+net#IP_CKSUM)
-    net.wrword_msbf(ipchk)
-    net.setptr(frm_end)
+    ip_updchksum(net.ip_hdrlen{} + net.udp_hdrlen{} + net.dhcp_msglen{})
 
     ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPREQUEST]\n", net.currptr{})
     eth.txpayload(@_buff, net.currptr{})
@@ -397,6 +385,20 @@ PRI GetFrame{} | rdptr
 
     eth.fiforxrdptr(rdptr)
 
+PRI IP_UpdChksum(length) | ipchk, ptr_tmp
+' Update IP header with checksum
+    ptr_tmp := net.currptr{}                    ' cache current pointer
+
+    { update IP header with specified length and calculate checksum }
+    net.ip_setdgramlen(length)
+    net.setptr(_ip_st)
+    net.wr_ip_header{}
+    ipchk := crc.inetchksum(@_buff[_ip_st], net.ip_hdrlen{}, $00)
+    net.setptr(_ip_st+net#IP_CKSUM)
+    net.wrword_msbf(ipchk)
+
+    net.setptr(ptr_tmp)                         ' restore pointer pos
+
 PRI Process_ARP{} | opcode
 ' Process ARP message
     ser.str(@"[ARP]")
@@ -448,7 +450,7 @@ PRI Process_EthII{}: msg_t | ether_t
         ser.hex(ether_t, 4)
         ser.strln(@"]")
 
-PRI Process_ICMP{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
+PRI Process_ICMP{} | eth_st, icmp_st, frm_end, ipchk, icmpchk
 ' Process ICMP messages
     { if this node is bound to an IP and the echo request was directed to it, }
     {   send a reply }
@@ -462,7 +464,7 @@ PRI Process_ICMP{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
             if (_dhcp_state => BOUND)
                 if (net.ip_destaddr{} == _my_ip)
                     eth_st := startframe{}
-                    ip_st := ethii_reply{}
+                    _ip_st := ethii_reply{}
                     icmp_st := ipv4_reply{}
 
                     net.icmp_setchksum(0)
@@ -474,14 +476,7 @@ PRI Process_ICMP{} | eth_st, ip_st, icmp_st, frm_end, ipchk, icmpchk
                     net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
                     frm_end := net.currptr{}
 
-                    { update IP header with length: IP header + ICMP message + echo data }
-                    net.ip_setdgramlen(net.ip_hdrlen{} + net.icmp_msglen{} + ICMP_DAT_LEN)
-                    net.setptr(ip_st)
-                    net.wr_ip_header{}
-                    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen{}, $00)
-                    net.setptr(ip_st+net#IP_CKSUM)
-                    net.wrword_msbf(ipchk)
-                    net.setptr(frm_end)
+                    ip_updchksum(net.ip_hdrlen{} + net.icmp_msglen{} + ICMP_DAT_LEN)
 
                     icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msglen{} + ICMP_DAT_LEN, $00)
                     net.setptr(icmp_st+net#ICMP_CKSUM)

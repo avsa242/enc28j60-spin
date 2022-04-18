@@ -104,7 +104,7 @@ PRI ShowTCP_Flags(flags) | i
 
 PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
 
-    if ((data_len + 20 + 40) > MTU_MAX)         ' data len + IP hdr + TCP hdr
+    if ((data_len + net#IP_HDR_SZ + net#TCP_HDR_SZ) > MTU_MAX)         ' data len + IP hdr + TCP hdr
         return -1                               ' frame too big; ignore
 
     startframe()
@@ -144,18 +144,11 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
     net.tcp_sethdrlenbytes(20 + (net.currptr() - frm_end))  ' hdr len = TCP hdr + opts len
     frm_end := net.currptr()                    ' update frame end: add TCP options
 
-    net.setptr(tcp_st + net.IDX_TCP_HDRLEN)
+    net.setptr(tcp_st + net.TCPH_HDRLEN)
     net.wr_byte(net.tcp_hdrlen() | ((net.tcp_flags >> net.NONCE) & 1) )
     net.setptr(frm_end)
 
-    { update IP header with length: IP header + TCP header [+ payload] }
-    net.ip_setdgramlen(net.ip_hdrlen() + net.tcp_hdrlenbytes() + data_len)
-    net.setptr(ip_st)
-    net.wr_ip_header()
-    ipchk := crc.inetchksum(@_buff[ip_st], net.ip_hdrlen(), $00)
-    net.setptr(ip_st+net.IP_CKSUM)
-    net.wrword_msbf(ipchk)
-    net.setptr(frm_end)
+    ip_updchksum(net.ip_hdrlen() + net.tcp_hdrlenbytes() + data_len)
 
     { update TCP header with checksum }
     _tcp_ph_src := net.ip_srcaddr()
@@ -169,7 +162,7 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
     { calc checksum of TCP/IP pseudo header, then the TCP header }
     pseudo_chk := crc.inetchksum(@_tcp_ph_src, 12, $00)
     tcpchk := crc.inetchksum(@_buff[tcp_st], net.tcp_hdrlenbytes(), pseudo_chk)
-    net.setptr(tcp_st+net.IDX_TCP_CKSUM)
+    net.setptr(tcp_st+net.TCPH_CKSUM)
     net.wrword_msbf(tcpchk)
     net.setptr(frm_end)
 
