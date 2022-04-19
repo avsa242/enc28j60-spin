@@ -179,9 +179,9 @@ PUB Main{} | rn
             BOUND:
                 _my_ip := net.bootp_yourip{}
                 ser.strln(@"---")
-                ser.fgcolor(ser#GREEN)
+                ser.fgcolor(ser#LTGREEN)
                 showipaddr(@"My IP: ", _my_ip)
-                ser.fgcolor(ser#WHITE)
+                ser.fgcolor(ser#GREY)
                 ser.newline{}
                 ser.printf1(@"Lease time: %dsec\n", net.dhcp_ipleasetime{})
                 ser.printf1(@"Rebind time: %dsec\n", net.dhcp_iprebindtime{})
@@ -411,10 +411,10 @@ PRI Process_ARP{} | opcode
             if (_dhcp_state => BOUND)
                 if (net.arp_targetprotoaddr{} == _my_ip)
                     arp_reply{}
-                    ser.printf1(@"[TX: %d][ARP][REPLY] ", net.currptr{})
-                    ser.fgcolor(ser#YELLOW)
+                    ser.printf1(@"[TX: %d][ARP][REPLY]", net.currptr{})
+                    ser.fgcolor(ser#LTYELLOW)
                     showarpmsg(net#ARP_REPL)
-                    ser.fgcolor(ser#WHITE)
+                    ser.fgcolor(ser#GREY)
         net#ARP_REPL:
 
 PRI Process_BOOTP{}
@@ -519,13 +519,14 @@ PRI ShowARPMsg(opcode)
 ' Show Wireshark-ish messages about the ARP message received
     case opcode
         net#ARP_REQ:
-            showipaddr(@"Who has ", net.arp_targetprotoaddr{})
+            showipaddr(@"[Who has ", net.arp_targetprotoaddr{})
             showipaddr(@"? Tell ", net.arp_senderprotoaddr{})
-            ser.newline{}
+            ser.strln(@"]")
         net#ARP_REPL:
+            ser.char("[")
             showipaddr(0, net.arp_senderprotoaddr{})
             showmacaddr(@" is at ", net.arp_senderhwaddr{})
-            ser.newline{}
+            ser.strln(@"]")
 
 PRI ShowIPAddr(ptr_msg, addr) | i
 ' Display IP address, with optional preceding string (pass 0 to ignore)

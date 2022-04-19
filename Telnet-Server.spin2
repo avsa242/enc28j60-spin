@@ -92,13 +92,13 @@ PRI ShowTCP_Flags(flags) | i
 ' Display the TCP header's flag bits as symbols
     ser.str(@": [")
     repeat i from 8 to 0
-        if (flags & ( decod  i))
-            ser.fgcolor(ser.BRIGHT+ser.WHITE)
+        if ( flags & decod(i) )
+            ser.fgcolor(ser.WHITE)
             ser.str(@_tcp_flagstr[i*6])
         else
-            ser.fgcolor(ser.BRIGHT+ser.BLACK)
+            ser.fgcolor(ser.DKGREY)
             ser.str(@_tcp_flagstr[i*6])
-    ser.fgcolor(ser.WHITE)
+    ser.fgcolor(ser.GREY)
     ser.char("]")
 
 PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
@@ -113,9 +113,7 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
     tcp_st := net.currptr()
 
     { swap source/dest ports so as to "reply" }
-    tmp := net.tcp_srcport()
-    net.tcp_setsrcport(net.tcp_destport())
-    net.tcp_setdestport(tmp)
+    net.tcp_swapports{}
 
     net.tcp_setacknr(_cli_seq_nr)               ' client's seq num
     net.tcp_setseqnr(_seq_nr)                   ' our seq num
