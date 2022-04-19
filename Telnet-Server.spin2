@@ -16,7 +16,6 @@
 
 VAR
 
-    long _seq_nr, _cli_seq_nr
     byte _tcp_state
 
 CON
@@ -35,13 +34,12 @@ PRI Process_TCP() | isn, hdr_len, paylen_rx
     net.rd_tcp_header()
     net.rd_tcp_opts()
     showtcp_flags(net.tcp_flags)
-    ser.newline
+    ser.newline()
 
     { reset connection request received? Set everything back to its }
     { initial state }
     if (net.tcp_flags() == net.RST_BIT)
         ser.strln(@"Connection reset")
-        _seq_nr := _cli_seq_nr := 0
         net.tcp_reset()                         ' clear ALL stored TCP header data
         _tcp_state := LISTEN
         return
@@ -52,11 +50,11 @@ PRI Process_TCP() | isn, hdr_len, paylen_rx
 }   lookdown(net.tcp_destport(): svc.TELNET) )
         case _tcp_state
             LISTEN:
-                isn := math.rndi(posx)
-                _seq_nr := isn
                 ser.strln(@"[LISTEN]")
                 if (net.tcp_flags() == net.SYN_BIT)
-                    _cli_seq_nr := net.tcp_seqnr() + 1
+                    net.tcp_swapseqnrs()
+                    net.tcp_setseqnr(math.rndi(posx))
+                    net.tcp_incacknr(1)
                     tcp_send(net.SYN_BIT | net.ACK_BIT, 0, 0)
                     _tcp_state := SYN_RECEIVED
             SYN_RECEIVED:
@@ -73,14 +71,15 @@ PRI Process_TCP() | isn, hdr_len, paylen_rx
                     {   the IP header, and the TCP header + options }
                     if (paylen_rx > 0)
                         ser.hexdump(@_buff+net.ETH_FRM_SZ+hdr_len, 0, 4, paylen_rx, (16 <# paylen_rx) )
-                    _cli_seq_nr += paylen_rx    ' inc their seq nr by sz of payld rx'd
-                    _seq_nr := net.tcp_acknr()  ' maintain our seq nr based on their ack
+                    net.tcp_swapseqnrs()
+                    net.tcp_incacknr(paylen_rx)
                     tcp_send(net.ACK_BIT, 0, 0)
                 if (net.tcp_flags() == (net.FIN_BIT | net.ACK_BIT))
                     _tcp_state := CLOSE_WAIT
             CLOSE_WAIT:
                 ser.strln(@"[CLOSE_WAIT]")
-                _cli_seq_nr++
+                net.tcp_swapseqnrs()
+                net.tcp_incacknr(1)
                 tcp_send(net.FIN_BIT | net.ACK_BIT, 0, 0)
                 _tcp_state := LAST_ACK
             LAST_ACK:
@@ -113,10 +112,8 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
     tcp_st := net.currptr()
 
     { swap source/dest ports so as to "reply" }
-    net.tcp_swapports{}
+    net.tcp_swapports()
 
-    net.tcp_setacknr(_cli_seq_nr)               ' client's seq num
-    net.tcp_setseqnr(_seq_nr)                   ' our seq num
     net.tcp_setflags(flags)
 
     net.tcp_setchksum(0)                        ' init chksum field to 0 for real chksum calc
@@ -138,7 +135,7 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
         net.writeklv(net.NOOP, 0, false, 0, 0)
         net.writeklv(net.NOOP, 0, false, 0, 0)
         net.writeklv(net.TMSTAMPS, 10, true, net.tcp_timest_ptr(), net.MSBF)
-    net.tcp_sethdrlenbytes(20 + (net.currptr() - frm_end))  ' hdr len = TCP hdr + opts len
+    net.tcp_sethdrlenbytes(net.TCP_HDR_SZ + (net.currptr() - frm_end))  ' hdr len = TCP hdr + opts len
     frm_end := net.currptr()                    ' update frame end: add TCP options
 
     net.setptr(tcp_st + net.TCPH_HDRLEN)
