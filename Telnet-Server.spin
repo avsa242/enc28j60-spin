@@ -46,9 +46,6 @@ PRI Process_TCP{} | isn, hdr_len, paylen_rx
         _tcp_state := LISTEN
         return
 
-    if (net.tcp_flags{} == (net#FIN_BIT | net#ACK_BIT)) and (_tcp_state < CLOSE_WAIT)
-        _tcp_state := CLOSE_WAIT
-
     { if this node is bound to an IP, the TCP message was directed to it, }
     {   and we're listening on the port, set up a connection }
     if ( (_dhcp_state => BOUND) and (net.ip_destaddr{} == _my_ip) and {
@@ -68,7 +65,7 @@ PRI Process_TCP{} | isn, hdr_len, paylen_rx
                     _tcp_state := ESTABLISHED
             ESTABLISHED:
                 ser.strln(@"[ESTABLISHED]")
-                if ((net.tcp_flags{} & net#PSH_BIT) or (net.tcp_flags{} & net#ACK_BIT))
+                if ((net.tcp_flags{} & net#PSH_BIT) or (net.tcp_flags{} == net#ACK_BIT))
                     hdr_len := net.ip_hdrlen{}+net.tcp_hdrlenbytes{}
                     paylen_rx := net.ip_dgramlen{}-hdr_len
                     { if there's a payload attached to this segment, }
@@ -79,6 +76,8 @@ PRI Process_TCP{} | isn, hdr_len, paylen_rx
                     _cli_seq_nr += paylen_rx    ' inc their seq nr by sz of payld rx'd
                     _seq_nr := net.tcp_acknr{}  ' maintain our seq nr based on their ack
                     tcp_send(net#ACK_BIT, 0, 0)
+                if (net.tcp_flags{} == (net#FIN_BIT | net#ACK_BIT))
+                    _tcp_state := CLOSE_WAIT
             CLOSE_WAIT:
                 ser.strln(@"[CLOSE_WAIT]")
                 _cli_seq_nr++
