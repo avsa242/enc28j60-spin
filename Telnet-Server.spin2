@@ -5,7 +5,7 @@
     Description: WIP Telnet server, for testing TCP
     Copyright (c) 2022
     Started Apr 16, 2022
-    Updated Apr 18, 2022
+    Updated Apr 19, 2022
     See end of file for terms of use.
    --------------------------------------------
 
@@ -39,14 +39,14 @@ PRI Process_TCP() | isn, hdr_len, paylen_rx
 
     { reset connection request received? Set everything back to its }
     { initial state }
-    if (net.tcp_flags == net.RST_BIT)
+    if (net.tcp_flags() == net.RST_BIT)
         ser.strln(@"Connection reset")
         _seq_nr := _cli_seq_nr := 0
         net.tcp_reset()                         ' clear ALL stored TCP header data
         _tcp_state := LISTEN
         return
 
-    if (net.tcp_flags == (net.FIN_BIT | net.ACK_BIT)) and (_tcp_state < CLOSE_WAIT)
+    if (net.tcp_flags() == (net.FIN_BIT | net.ACK_BIT)) and (_tcp_state < CLOSE_WAIT)
         _tcp_state := CLOSE_WAIT
 
     { if this node is bound to an IP, the TCP message was directed to it, }
@@ -58,17 +58,17 @@ PRI Process_TCP() | isn, hdr_len, paylen_rx
                 isn := math.rndi(posx)
                 _seq_nr := isn
                 ser.strln(@"[LISTEN]")
-                if (net.tcp_flags == net.SYN_BIT)
+                if (net.tcp_flags() == net.SYN_BIT)
                     _cli_seq_nr := net.tcp_seqnr() + 1
                     tcp_send(net.SYN_BIT | net.ACK_BIT, 0, 0)
                     _tcp_state := SYN_RECEIVED
             SYN_RECEIVED:
                 ser.strln(@"[SYN_RECEIVED]")
-                if (net.tcp_flags == net.ACK_BIT)
+                if (net.tcp_flags() == net.ACK_BIT)
                     _tcp_state := ESTABLISHED
             ESTABLISHED:
                 ser.strln(@"[ESTABLISHED]")
-                if ((net.tcp_flags & net.PSH_BIT) or (net.tcp_flags & net.ACK_BIT))
+                if ((net.tcp_flags() & net.PSH_BIT) or (net.tcp_flags() & net.ACK_BIT))
                     hdr_len := net.ip_hdrlen()+net.tcp_hdrlenbytes()
                     paylen_rx := net.ip_dgramlen()-hdr_len
                     { if there's a payload attached to this segment, }
@@ -86,7 +86,7 @@ PRI Process_TCP() | isn, hdr_len, paylen_rx
                 _tcp_state := LAST_ACK
             LAST_ACK:
                 ser.strln(@"[LAST_ACK]")
-                if (net.tcp_flags & net.ACK_BIT)
+                if (net.tcp_flags() & net.ACK_BIT)
                     _tcp_state := LISTEN'CLOSED
 
 PRI ShowTCP_Flags(flags) | i
@@ -145,7 +145,7 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
     frm_end := net.currptr()                    ' update frame end: add TCP options
 
     net.setptr(tcp_st + net.TCPH_HDRLEN)
-    net.wr_byte(net.tcp_hdrlen() | ((net.tcp_flags >> net.NONCE) & 1) )
+    net.wr_byte(net.tcp_hdrlen() | ((net.tcp_flags() >> net.NONCE) & 1) )
     net.setptr(frm_end)
 
     ip_updchksum(net.ip_hdrlen() + net.tcp_hdrlenbytes() + data_len)
