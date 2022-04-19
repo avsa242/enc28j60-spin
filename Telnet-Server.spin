@@ -13,7 +13,6 @@
 }
 #define TCP_TEL
 #include "DHCP-LeaseIP-BuffIO.spin"
-
 VAR
 
     byte _tcp_state
@@ -30,11 +29,8 @@ CON
 
 PRI Process_TCP{} | isn, hdr_len, paylen_rx
 ' Process TCP datagrams
-    ser.str(@"[TCP]")
     net.rd_tcp_header{}
     net.rd_tcp_opts{}
-    showtcp_flags(net.tcp_flags)
-    ser.newline{}
 
     { reset connection request received? Set everything back to its }
     { initial state }
@@ -58,11 +54,11 @@ PRI Process_TCP{} | isn, hdr_len, paylen_rx
                     tcp_send(net#SYN_BIT | net#ACK_BIT, 0, 0)
                     _tcp_state := SYN_RECEIVED
             SYN_RECEIVED:
-                ser.strln(@"[SYN_RECEIVED]")
+                showipaddr(@"[SYN_RECEIVED] ", net.ip_srcaddr{}, string(10, 13))
                 if (net.tcp_flags{} == net#ACK_BIT)
                     _tcp_state := ESTABLISHED
             ESTABLISHED:
-                ser.strln(@"[ESTABLISHED]")
+                showipaddr(@"[ESTABLISHED] ", net.ip_srcaddr{}, string(10, 13))
                 if ((net.tcp_flags{} & net#PSH_BIT) or (net.tcp_flags{} == net#ACK_BIT))
                     hdr_len := net.ip_hdrlen{}+net.tcp_hdrlenbytes{}
                     paylen_rx := net.ip_dgramlen{}-hdr_len
@@ -77,13 +73,13 @@ PRI Process_TCP{} | isn, hdr_len, paylen_rx
                 if (net.tcp_flags{} == (net#FIN_BIT | net#ACK_BIT))
                     _tcp_state := CLOSE_WAIT
             CLOSE_WAIT:
-                ser.strln(@"[CLOSE_WAIT]")
+                showipaddr(@"[CLOSE_WAIT] ", net.ip_srcaddr{}, string(10, 13))
                 net.tcp_swapseqnrs{}
                 net.tcp_incacknr(1)
                 tcp_send(net#FIN_BIT | net#ACK_BIT, 0, 0)
                 _tcp_state := LAST_ACK
             LAST_ACK:
-                ser.strln(@"[LAST_ACK]")
+                showipaddr(@"[LAST_ACK] ", net.ip_srcaddr{}, string(10, 13))
                 if (net.tcp_flags{} & net#ACK_BIT)
                     _tcp_state := LISTEN'CLOSED
 
@@ -100,7 +96,7 @@ PRI ShowTCP_Flags(flags) | i
     ser.fgcolor(ser#GREY)
     ser.char("]")
 
-PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
+PRI TCP_Send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
 
     { before doing anything, check that the segment fits within the max MTU }
     if ((data_len + net#ETH_FRM_SZ + net#IP_HDR_SZ + net#TCP_HDR_SZ) > MTU_MAX)
@@ -108,7 +104,6 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
 
     startframe{}
     ethii_reply
-    ip_st := net.currptr{}
     ipv4_reply{}
     tcp_st := net.currptr{}
 
@@ -143,7 +138,7 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
     net.wr_byte(net.tcp_hdrlen{} | ((net.tcp_flags{} >> net#NONCE) & 1) )
     net.setptr(frm_end)
 
-    ip_updchksum(net.ip_hdrlen{} + net.tcp_hdrlenbytes{} + data_len)
+    ipv4_updchksum(net.ip_hdrlen{} + net.tcp_hdrlenbytes{} + data_len)
 
     { update TCP header with checksum }
     _tcp_ph_src := net.ip_srcaddr{}
@@ -167,9 +162,6 @@ PRI TCP_Send(flags, data_len, ptr_data) | ip_st, ipchk, tcp_st, frm_end, pseudo_
 
     eth.txpayload(@_buff, net.currptr{})
     sendframe{}
-    ser.printf1(@"[TX: %d][IPv4][TCP]", frm_end)
-    showtcp_flags(flags)
-    ser.newline{}
 
 DAT
     ' XXX var?
