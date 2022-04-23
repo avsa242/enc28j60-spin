@@ -99,7 +99,7 @@ PRI ShowTCP_Flags(flags) | i
 PRI TCP_Send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
 
     { before doing anything, check that the segment fits within the max MTU }
-    if ((data_len + net#ETH_FRM_SZ + net.IP_HDR_SZ + net.TCP_HDR_SZ) > MTU_MAX)
+    if ((data_len + net.ETH_FRM_SZ + net.IP_HDR_SZ + net.TCP_HDR_SZ) > MTU_MAX)
         return -1                               ' frame too big; ignore
 
     startframe()
