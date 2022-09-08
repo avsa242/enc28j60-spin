@@ -50,7 +50,6 @@ OBJ
     spi : "com.spi.fast-nocs"                   ' PASM SPI engine (20MHz W/10R)
     core: "core.con.enc28j60"                   ' hw-specific constants
     time: "time"                                ' Basic timing functions
-    ser : "com.serial.terminal.ansi"
 
 PUB Null{}
 ' This is not a top-level object
@@ -69,10 +68,7 @@ PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
             repeat until clkready{}
             reset
             time.msleep(5)
-            ser.startrxtx(17, 18, 0, 115200)
             time.msleep(30)
-'            ser.clear
-            ser.strln(@"debug started")
             return
     ' if this point is reached, something above failed
     ' Re-check I/O pin assignments, bus speed, connections, power
@@ -420,7 +416,6 @@ PUB HDXLoopback(state): curr_state
 
 PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
 
-    ser.strln(@"InetChksum()")
     ck_st += TXSTART+1
     ck_end += TXSTART
 
@@ -428,25 +423,17 @@ PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
     writereg(core#EDMANDL, 2, @ck_end)
     readreg(core#EDMASTL, 2, @st)
     readreg(core#EDMANDL, 2, @nd)
-'    ser.printf1(@"EDMASTL: %x\n", st)
-'    ser.printf1(@"EDMANDL: %x\n", nd)
 
     { ERRATA #15: Wait for receive to finish }
-'    ser.str(@"wait rx...")
     repeat while rxbusy{}
-'    ser.strln(@"rx done")
 
-'    ser.str(@"wait cksum...")
     calcchksum{}
 
     repeat until dmaready{}
-'    ser.strln(@"cksum done")
 
     ck_end := ck_dest + TXSTART+1
-'    ser.printf1(@"ck_end is %d\n", ck_end)
 
     readreg(core#EDMACSL, 2, @chk)
-'    ser.printf1(@"chk is: %x\n", chk)
 
     fifowrptr(ck_end)
 
@@ -1220,22 +1207,21 @@ PRI writeReg(reg_nr, nr_bytes, ptr_buff) | i
 
 DAT
 {
-    --------------------------------------------------------------------------------------------------------
-    TERMS OF USE: MIT License
+Copyright 2022 Jesse Burt
 
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-    associated documentation files (the "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-    following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-    The above copyright notice and this permission notice shall be included in all copies or substantial
-    portions of the Software.
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-    --------------------------------------------------------------------------------------------------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
+

@@ -92,7 +92,6 @@ DAT
 PUB Main{} | rn
 
     setup{}
-'    eth.init(@_buff)
 
     math.rndseed(cnt)
     eth.pktfilter(0)
@@ -106,8 +105,6 @@ PUB Main{} | rn
     ser.str(@"waiting for PHY link...")
     repeat until eth.phylinkstate{} == eth#UP
     ser.strln(@"link UP")
-
-'    bytefill(@_buff, 0, MTU_MAX)
 
     _dly := 4
     _xid := (math.rndi($7fff_ffff) & $7fff_fff0)
@@ -203,7 +200,6 @@ PUB Discover{} | ipchk, frm_end
     eth.wr_ethii_frame{}
 
     _ip_st := eth.currptr{}                    ' mark start of IPV4 data
-'    ser.printf1(@"Discover(): _ip_st = %d\n\r", _ip_st)
     eth.ip_setversion(4)
     eth.ip_sethdrlen(20)
     eth.ip_setdscp(0)
@@ -220,14 +216,12 @@ PUB Discover{} | ipchk, frm_end
     eth.wr_ip_header{}
 
     _udp_st := eth.currptr{}                   ' mark start of UDP data
-'    ser.printf1(@"Discover(): _udp_st = %d\n\r", _udp_st)
     eth.udp_setsrcport(svc#BOOTP_C)
     eth.udp_setdestport(svc#BOOTP_S)
     eth.udp_setchksum(0)
     eth.wr_udp_header{}
 
     _dhcp_st := eth.currptr{}                  ' mark start of BOOTP data
-'    ser.printf1(@"Discover(): _dhcp_st = %d\n\r", _dhcp_st)
     eth.bootp_setopcode(eth#BOOT_REQ)
     eth.bootp_sethdwtype(eth#ETHERNET)
     eth.bootp_sethdwaddrlen(MACADDR_LEN)
@@ -246,8 +240,6 @@ PUB Discover{} | ipchk, frm_end
     eth.dhcp_setmsgtype(eth#DHCPDISCOVER)
     eth.wr_dhcp_msg{}
     frm_end := eth.currptr{}
-'    ser.printf2(@"Discover(): frm_end() = %d (len = %d)\n\r", frm_end, frm_end-TXSTART)
-'    hexdump
 
     { update UDP header with length: UDP header + DHCP message }
     ser.printf1(@"updating UDP header length (pos is %d)\n\r", _udp_st + eth#UDP_DGRAM_LEN)
@@ -264,9 +256,7 @@ PUB Discover{} | ipchk, frm_end
 }   eth#IP_ABS_ST+eth#IP_CKSUM)
     eth.setptr(frm_end)
     hexdump
-'    ser.hexdump(@_buff, 0, 4, frm_end, 16)
     ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPDISCOVER]\n\r", frm_end-TXSTART)
-'    eth.txpayload(@_buff, frm_end)
     send_frame{}
 
 pub hexdump | rdptr, curr_byte, len, col
@@ -315,8 +305,8 @@ PUB Request{} | ipchk, frm_end
     _udp_st := eth.currptr{}
     eth.udp_setsrcport(svc#BOOTP_C)
     eth.udp_setdestport(svc#BOOTP_S)
-    eth.udp_setdgramlen(0)   'xxx
-    eth.udp_setchksum($0000)'xxx
+    eth.udp_setdgramlen(0)
+    eth.udp_setchksum($0000)
     eth.wr_udp_header{}
 
     _dhcp_st := eth.currptr{}
@@ -348,7 +338,6 @@ PUB Request{} | ipchk, frm_end
 }   eth#IP_ABS_ST+eth#IP_CKSUM)
     eth.setptr(frm_end)
 
-'    ser.hexdump(@_buff, 0, 4, frm_end, 16)
     ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPREQUEST]\n\r", eth.currptr{})
     send_frame{}
 
@@ -368,11 +357,8 @@ PUB ARP_Reply{}
     { is at }
     eth.arp_setsenderhwaddr(@_mac_local)
 
-'    eth.init(@_buff)
     eth.wr_ethii_frame{}
     eth.wr_arp_msg{}
-
-'    eth.txpayload(@_buff, eth.currptr{})
 
 PUB GetFrame{} | rdptr
 ' Receive frame from ethernet device
@@ -458,16 +444,11 @@ PRI ProcessFrame{} | ether_t
         ser.hex(ether_t, 4)
         ser.strln(@"]")
 
-'    bytefill(@_buff, 0, MTU_MAX)
-
-PRI send_frame{} | ptr_tmp, t_e
-{ show raw packet }
-'    ser.hexdump(@_buff, 0, 4, eth.currptr{}, 16)
-'    repeat
+PRI send_frame{} | t_e
+' Send assembled ethernet frame
     { send packet }
     eth.fifotxstart(TXSTART)        'ETXSTL: TXSTART
     t_e := eth.fifowrptr(-2)
-    ser.printf1(@"t_e = %d\n\r", t_e)
     eth.fifotxend(t_e)              'ETXNDL: TXSTART+len
     eth.txenabled(true)             'send
 
@@ -477,8 +458,7 @@ PRI send_frame{} | ptr_tmp, t_e
     repeat 7
         ser.hex(eth.rd_byte, 2)
         ser.char(" ")
-    ser.newline
-    eth.fifordptr(t_e)
+    ser.newline{}
 
 PRI ShowARPMsg(opcode)
 ' Show Wireshark-ish messages about the ARP message received
@@ -522,7 +502,6 @@ PRI ShowMACOUI(ptr_msg, ptr_addr) | i
 PRI StartFrame{}
 ' Reset pointers, and add control byte to frame
     eth.fifowrptr(TXSTART)
-'    eth.setptr(0)
     eth.wr_byte($00)                      ' per-frame control byte
 
 PRI cog_Timer{}
@@ -553,22 +532,21 @@ PUB Setup{}
 
 DAT
 {
-    --------------------------------------------------------------------------------------------------------
-    TERMS OF USE: MIT License
+Copyright 2022 Jesse Burt
 
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-    associated documentation files (the "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-    following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-    The above copyright notice and this permission notice shall be included in all copies or substantial
-    portions of the Software.
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-    --------------------------------------------------------------------------------------------------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
+
