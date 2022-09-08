@@ -199,7 +199,7 @@ PUB ARP_Reply{}
     net.arp_setsenderhwaddr(@_mac_local)
 
     net.wr_arp_msg{}
-    eth.txpayload(@_buff, net.currptr{})
+    eth.txpayload(@_buff, net.fifowrptr(-2))
     sendframe{}
 
 PUB DHCP_Msg(msg_t) | tmp
@@ -222,14 +222,14 @@ PUB DHCP_Msg(msg_t) | tmp
     net.wr_dhcp_msg{}
 
     { update UDP header with length: UDP header + DHCP message }
-    tmp := net.currptr{}
+    tmp := net.fifowrptr(-2)
     net.setptr(_udp_st+net#UDP_DGRAM_LEN)
     net.wrword_msbf(net.udp_hdrlen{} + net.dhcp_msglen{})
     net.setptr(tmp)
 
     ipv4_updchksum(net.ip_hdrlen{} + net.udp_hdrlen{} + net.dhcp_msglen{})
 
-    eth.txpayload(@_buff, net.currptr{})
+    eth.txpayload(@_buff, net.fifowrptr(-2))
     sendframe{}
 
 PUB EthII_New(mac_src, mac_dest, ether_t)
@@ -244,7 +244,7 @@ PUB EthII_Reply{}: pos
     net.ethii_setdestaddr(net.ethii_srcaddr{})
     net.ethii_setsrcaddr(@_mac_local)
     net.wr_ethii_frame{}
-    return net.currptr{}
+    return net.fifowrptr(-2)
 
 PUB GetFrame{} | rdptr
 ' Receive frame from ethernet device
@@ -269,7 +269,7 @@ PUB GetFrame{} | rdptr
 PUB IPV4_New(l4_proto, src_ip, dest_ip)
 ' Construct an IPV4 header
 '   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
-    _ip_st := net.currptr{}                     ' mark start of IPV4 data
+    _ip_st := net.fifowrptr(-2)                     ' mark start of IPV4 data
     net.ip_setl4proto(l4_proto)
     net.ip_setsrcaddr(src_ip)
     net.ip_setdestaddr(dest_ip)
@@ -279,11 +279,11 @@ PUB IPV4_Reply{}: pos
 ' Set up/write IPv4 header as a reply to last received header
     net.ip_sethdrchk(0)                         ' init header checksum to 0
     ipv4_new(net.ip_l4proto{}, _my_ip, net.ip_srcaddr{})
-    return net.currptr{}
+    return net.fifowrptr(-2)
 
 PUB IPV4_UpdChksum(length) | ipchk, ptr_tmp
 ' Update IP header with checksum
-    ptr_tmp := net.currptr{}                    ' cache current pointer
+    ptr_tmp := net.fifowrptr(-2)                    ' cache current pointer
 
     { update IP header with specified length and calculate checksum }
     net.ip_setdgramlen(length)
@@ -348,7 +348,7 @@ PUB Process_ICMP{} | icmp_st, frm_end, ipchk, icmpchk
 
                 { write the echo data that was received in the request }
                 net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
-                frm_end := net.currptr{}
+                frm_end := net.fifowrptr(-2)
 
                 ipv4_updchksum(net.ip_hdrlen{} + net.icmp_msglen{} + ICMP_DAT_LEN)
 
@@ -357,7 +357,7 @@ PUB Process_ICMP{} | icmp_st, frm_end, ipchk, icmpchk
                 net.wrword_msbf(icmpchk)
                 net.setptr(frm_end)
 
-                eth.txpayload(@_buff, net.currptr{})
+                eth.txpayload(@_buff, net.fifowrptr(-2))
                 sendframe{}
 
 PUB Process_IPV4{}: msg
@@ -381,7 +381,7 @@ PUB SendFrame{}
 ' Send queued ethernet frame
     { set TX FIFO parameters to point to assembled ethernet frame }
     eth.fifotxstart(TXSTART)                    ' ETXSTL: TXSTART
-    eth.fifotxend(TXSTART+net.currptr{})        ' ETXNDL: TXSTART+currptr
+    eth.fifotxend(TXSTART+net.fifowrptr(-2))        ' ETXNDL: TXSTART+currptr
     eth.txenabled(true)                         ' send
 
 PUB ShowARPMsg(opcode)
@@ -433,11 +433,11 @@ PUB StartFrame{}: pos
     eth.fifowrptr(TXSTART)
     net.setptr(0)
     net.wr_byte($00)                            ' per-frame control byte
-    return net.currptr{}
+    return net.fifowrptr(-2)
 
 PUB UDP_New(src_p, dest_p)
 ' Construct a UDP header
-    _udp_st := net.currptr{}
+    _udp_st := net.fifowrptr(-2)
     net.reset_udp{}
     net.udp_setsrcport(src_p)
     net.udp_setdestport(dest_p)

@@ -5,11 +5,17 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Mar 17, 2022
+    Updated Sep 8, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
-
+#include "protocol.net.eth-ii.spin"
+#include "protocol.net.ip.spin"
+#include "protocol.net.arp.spin"
+#include "protocol.net.udp.spin"
+#include "protocol.net.bootp.spin"
+#include "protocol.net.icmp.spin"
+#include "protocol.net.tcp.spin"
 CON
 
     FIFO_MAX    = 8192-1
@@ -44,6 +50,7 @@ OBJ
     spi : "com.spi.fast-nocs"                   ' PASM SPI engine (20MHz W/10R)
     core: "core.con.enc28j60"                   ' hw-specific constants
     time: "time"                                ' Basic timing functions
+    ser : "com.serial.terminal.ansi"
 
 PUB Null{}
 ' This is not a top-level object
@@ -62,6 +69,10 @@ PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
             repeat until clkready{}
             reset
             time.msleep(5)
+            ser.startrxtx(17, 18, 0, 115200)
+            time.msleep(30)
+'            ser.clear
+            ser.strln(@"debug started")
             return
     ' if this point is reached, something above failed
     ' Re-check I/O pin assignments, bus speed, connections, power
@@ -178,6 +189,10 @@ PUB BackPressBackOff(state): curr_state 'XXX tentatively named
     state := ((curr_state & core#BPEN_MASK) | state)
     writereg(core#MACON4, 1, @state)
 
+PUB CalcChksum{}
+' Use DMA engine to calculate checksum
+    regbits_set(core#ECON1, core#DMAST_BITS | core#CSUMEN_BITS)
+
 PUB ClkReady{}: status
 ' Flag indicating clock is ready
 '   Returns: TRUE (-1) or FALSE (0)
@@ -197,6 +212,16 @@ PUB CollisionWin(nr_bytes): curr_nr 'XXX tentatively named
             curr_nr := 0
             readreg(core#MACLCON2, 1, @curr_nr)
             return
+
+PUB CurrPtr{}: p
+
+    return fifowrptr(-2)
+
+PUB DMAReady{}: flag
+' Flag indicating DMA engine is ready
+    flag := 0
+    readreg(core#ECON1, 1, @flag)
+    return ((flag & core#DMAST_BITS) == 0)
 
 PUB FIFOPtrAutoInc(state): curr_state
 ' Auto-increment FIFO pointer when writing
@@ -393,11 +418,47 @@ PUB HDXLoopback(state): curr_state
     state := ((curr_state & core#HDLDIS_MASK) | state)
     writereg(core#PHCON2, 1, @state)
 
+PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
+
+    ser.strln(@"InetChksum()")
+    ck_st += TXSTART+1
+    ck_end += TXSTART
+
+    writereg(core#EDMASTL, @ck_st, 2)
+    writereg(core#EDMANDL, @ck_end, 2)
+    readreg(core#EDMASTL, @st, 2)
+    readreg(core#EDMANDL, @nd, 2)
+'    ser.printf1(@"EDMASTL: %x\n", st)
+'    ser.printf1(@"EDMANDL: %x\n", nd)
+
+    { ERRATA #15: Wait for receive to finish }
+'    ser.str(@"wait rx...")
+    repeat while rxbusy{}
+'    ser.strln(@"rx done")
+
+'    ser.str(@"wait cksum...")
+    calcchksum{}
+
+    repeat until dmaready{}
+'    ser.strln(@"cksum done")
+
+    ck_end := ck_dest + TXSTART+1
+'    ser.printf1(@"ck_end is %d\n", ck_end)
+
+    readreg(core#EDMACSL, 2, @chk)
+'    ser.printf1(@"chk is: %x\n", chk)
+
+    fifowrptr(ck_end)
+
+    wrword_msbf(chk)
+
 PUB IntClear(mask)
 ' Clear interrupts
 '   Valid values:
-'       Bits: 5, 3, 1, 0 (set a bit to clear the corresponding interrupt flag)
+'       Bits: 6..3, 1, 0 (set a bit to clear the corresponding interrupt flag)
+'       6: packet received
 '       5: DMA copy or checksum calculation has completed
+'       4: link established
 '       3: transmit has ended
 '       1: transmit error
 '       0: receive error: insufficient buffer space
@@ -443,6 +504,19 @@ PUB Interrupt{}: int_src
 '           or PktCnt() => 255 (call PktDec())
     int_src := 0
     readreg(core#EIR, 1, @int_src)
+
+PUB IntMask(mask)
+' Enable interrupt flags
+'   Valid values:
+'       Bits: 6..3, 1, 0
+'       6: packet received
+'       5: DMA copy or checksum calculation has completed
+'       4: link established
+'       3: transmit has ended
+'       1: transmit error
+'       0: receive error: insufficient buffer space
+    mask &= core#EIE_MASK
+    writereg(core#EIE, 1, @mask)
 
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
@@ -717,6 +791,63 @@ PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
         curr_mask := 0
         readreg(core#ERXFCON, 1, @curr_mask)
 
+PUB RdBlk_LSBF(ptr_buff, len): ptr
+
+    case len
+        1..8191:
+            outa[_CS] := 0
+            spi.wr_byte(core#RD_BUFF)
+            spi.rdblock_lsbf(ptr_buff, len)
+            outa[_CS] := 1
+
+PUB RdBlk_MSBF(ptr_buff, len): ptr | i
+
+    case len
+        1..8191:
+            outa[_CS] := 0
+            spi.wr_byte(core#RD_BUFF)
+            repeat i from len-1 to 0
+                byte[ptr_buff][i] := spi.rd_byte{}'spi.rdblock_msbf(ptr_buff, len)
+            outa[_CS] := 1
+
+PUB Rd_Byte{}: b
+
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_BUFF)
+    b := spi.rd_byte{}
+    outa[_CS] := 1
+
+PUB RdLong_LSBF{}: l
+
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_BUFF)
+    l := spi.rdlong_lsbf{}
+    outa[_CS] := 1
+
+PUB RdLong_MSBF{}: l | i
+
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_BUFF)
+    repeat i from 3 to 0
+        l.byte[i] := spi.rd_byte{}
+    outa[_CS] := 1
+
+PUB RdWord_LSBF{}: w
+
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_BUFF)
+    w := spi.rdword_lsbf{}
+    outa[_CS] := 1
+
+PUB RdWord_MSBF{}: w
+
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_BUFF)
+'    w := spi.rdword_msbf{}
+    w.byte[1] := spi.rd_byte{}
+    w.byte[0] := spi.rd_byte{}
+    outa[_CS] := 1
+
 PUB Reset{}
 ' Perform soft-reset
     cmd(core#SRC)
@@ -725,6 +856,12 @@ PUB RevID{}: id
 ' Get device revision
     id := 0
     readreg(core#EREVID, 1, @id)
+
+PUB RXBusy{}: flag
+
+    flag := 0
+    readreg(core#ESTAT, 1, @flag)
+    return ((flag & core#RXBUSY_BITS) <> 0)
 
 PUB RXEnabled(state): curr_state
 ' Enable reception of packets
@@ -766,6 +903,11 @@ PUB RXPayload(ptr_buff, nr_bytes)
             spi.wr_byte(core#RD_BUFF)
             spi.rdblock_lsbf(ptr_buff, nr_bytes)
             outa[_CS] := 1
+
+PUB SetPtr(p)
+
+'    return 0
+    fifowrptr(p)
 
 PUB TXDefer(state): curr_state  'XXX tentatively named
 ' Defer transmission
@@ -837,6 +979,79 @@ PUB TXPayload(ptr_buff, nr_bytes)
             spi.wr_byte(core#WR_BUFF)
             spi.wrblock_lsbf(ptr_buff, nr_bytes)
             outa[_CS] := 1
+
+PUB WrBlk_LSBF(ptr_buff, len): ptr
+
+    case len
+        1..8191:
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_BUFF)
+            spi.wrblock_lsbf(ptr_buff, len)
+            outa[_CS] := 1
+
+PUB WrBlk_MSBF(ptr_buff, len): ptr | i
+
+    case len
+        1..8191:
+            outa[_CS] := 0
+            spi.wr_byte(core#WR_BUFF)
+'            spi.wrblock_msbf(ptr_buff, len)
+            repeat i from len-1 to 0
+                spi.wr_byte(byte[ptr_buff][i])
+            outa[_CS] := 1
+
+PUB Wr_Byte(b): len
+
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+    spi.wr_byte(b)
+    outa[_CS] := 1
+    return 1
+
+PUB Wr_ByteX(b, nr_bytes): len
+
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+    repeat nr_bytes
+        spi.wr_byte(b)
+    outa[_CS] := 1
+    return nr_bytes
+
+PUB WrLong_LSBF(l): len
+
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+    spi.wrlong_lsbf(l)
+    outa[_CS] := 1
+    return 4
+
+PUB WrLong_MSBF(l): len | i
+
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+'    spi.wrlong_msbf(l)
+    repeat i from 3 to 0
+        spi.wr_byte(l.byte[i])
+    outa[_CS] := 1
+    return 4
+
+PUB WrWord_LSBF(w): len
+
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+    spi.wrword_lsbf(w)
+    outa[_CS] := 1
+    return 2
+
+PUB WrWord_MSBF(w): len
+
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+'    spi.wrword_msbf(w)
+    spi.wr_byte(w.byte[1])
+    spi.wr_byte(w.byte[0])
+    outa[_CS] := 1
+    return 2
 
 PRI bankSel(bank_nr): curr_bank
 ' Select register bank
