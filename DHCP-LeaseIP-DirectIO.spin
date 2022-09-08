@@ -8,7 +8,7 @@
         (utilizes ENC28J60 native FIFO I/O)
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Mar 20, 2022
+    Updated Sep 8, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -247,26 +247,27 @@ PUB Discover{} | ipchk, frm_end
     eth.wr_dhcp_msg{}
     frm_end := eth.currptr{}
 '    ser.printf2(@"Discover(): frm_end() = %d (len = %d)\n\r", frm_end, frm_end-TXSTART)
-    hexdump
-{
+'    hexdump
+
     { update UDP header with length: UDP header + DHCP message }
+    ser.printf1(@"updating UDP header length (pos is %d)\n\r", _udp_st + eth#UDP_DGRAM_LEN)
     eth.setptr(_udp_st+eth#UDP_DGRAM_LEN)
     eth.wrword_msbf(eth.udp_hdrlen{} + eth.dhcp_msglen{})
     eth.setptr(frm_end)
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    eth.ip_setdgramlen((eth.ip_hdrlen{}*4)+eth.udp_hdrlen{}+eth.dhcp_msglen{})
-    eth.setptr(_ip_st)
-    eth.wr_ip_header{}
-'XXX    ipchk := crc.inetchksum(@_buff[_ip_st], eth.ip_hdrlen{}*4)
-    eth.setptr(_ip_st+eth#IP_CKSUM)
-    eth.wrword_msbf(ipchk)
+    eth.ip_setdgramlen(eth.ip_hdrlen{} + eth.udp_hdrlen{} + eth.dhcp_msglen{})
+    eth.setptr(_ip_st + eth#IP_TLEN)
+    eth.wrword_msbf(eth.ip_dgramlen{})
+
+    eth.inetchksum(eth#IP_ABS_ST, eth#IP_ABS_ST+eth#IP_HDR_SZ, {
+}   eth#IP_ABS_ST+eth#IP_CKSUM)
     eth.setptr(frm_end)
-}
+    hexdump
 '    ser.hexdump(@_buff, 0, 4, frm_end, 16)
     ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPDISCOVER]\n\r", frm_end-TXSTART)
 '    eth.txpayload(@_buff, frm_end)
-    sendframe{}
+    send_frame{}
 
 pub hexdump | rdptr, curr_byte, len, col
 
@@ -339,18 +340,17 @@ PUB Request{} | ipchk, frm_end
     eth.setptr(frm_end)
 
     { update IP header with length: IP header + UDP header + DHCP message }
-    eth.ip_setdgramlen((eth.ip_hdrlen{}*4)+eth.udp_hdrlen{}+eth.dhcp_msglen{})
-    eth.setptr(_ip_st)
-    eth.wr_ip_header{}
-' XXX    ipchk := crc.inetchksum(@_buff[_ip_st], eth.ip_hdrlen{}*4)
-    eth.setptr(_ip_st+eth#IP_CKSUM)
-    eth.wrword_msbf(ipchk)
+    eth.ip_setdgramlen(eth.ip_hdrlen{} + eth.udp_hdrlen{} + eth.dhcp_msglen{})
+    eth.setptr(_ip_st + eth#IP_TLEN)
+    eth.wrword_msbf(eth.ip_dgramlen{})
+
+    eth.inetchksum(eth#IP_ABS_ST, eth#IP_ABS_ST+eth#IP_HDR_SZ, {
+}   eth#IP_ABS_ST+eth#IP_CKSUM)
     eth.setptr(frm_end)
 
 '    ser.hexdump(@_buff, 0, 4, frm_end, 16)
     ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPREQUEST]\n\r", eth.currptr{})
-'    eth.txpayload(@_buff, eth.currptr{})
-    sendframe{}
+    send_frame{}
 
 PUB ARP_Reply{}
 ' Construct ARP reply message
@@ -416,7 +416,7 @@ PRI ProcessARP{} | opcode
                     ser.fgcolor(ser#YELLOW)
                     showarpmsg(eth#ARP_REPL)
                     ser.fgcolor(ser#WHITE)
-                    sendframe{}
+                    send_frame{}
         eth#ARP_REPL:
 
 PRI ProcessFrame{} | ether_t
@@ -460,20 +460,18 @@ PRI ProcessFrame{} | ether_t
 
 '    bytefill(@_buff, 0, MTU_MAX)
 
-PRI SendFrame{} | ptr_tmp, t_e
+PRI send_frame{} | ptr_tmp, t_e
 { show raw packet }
 '    ser.hexdump(@_buff, 0, 4, eth.currptr{}, 16)
 '    repeat
-{ send packet }
+    { send packet }
     eth.fifotxstart(TXSTART)        'ETXSTL: TXSTART
-    t_e := TXSTART+eth.fifowrptr(-2)
-    eth.fifotxend(t_e)   'ETXNDL: TXSTART+currptr
+    t_e := eth.fifowrptr(-2)
+    ser.printf1(@"t_e = %d\n\r", t_e)
+    eth.fifotxend(t_e)              'ETXNDL: TXSTART+len
     eth.txenabled(true)             'send
 
-    ser.str(@"int flags: ")
-    ser.bin(eth.interrupt, 8)
-    ser.newline
-    ptr_tmp := eth.fifowrptr(-2)
+    ser.printf1(@"int flags: %08.8b\n\r", eth.interrupt{})
     eth.fifordptr(t_e+1)
     ser.str(@"TSV: ")
     repeat 7
@@ -481,8 +479,6 @@ PRI SendFrame{} | ptr_tmp, t_e
         ser.char(" ")
     ser.newline
     eth.fifordptr(t_e)
-
-'    bytefill(@_buff, 0, MTU_MAX)
 
 PRI ShowARPMsg(opcode)
 ' Show Wireshark-ish messages about the ARP message received

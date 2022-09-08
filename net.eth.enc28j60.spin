@@ -424,10 +424,10 @@ PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
     ck_st += TXSTART+1
     ck_end += TXSTART
 
-    writereg(core#EDMASTL, @ck_st, 2)
-    writereg(core#EDMANDL, @ck_end, 2)
-    readreg(core#EDMASTL, @st, 2)
-    readreg(core#EDMANDL, @nd, 2)
+    writereg(core#EDMASTL, 2, @ck_st)
+    writereg(core#EDMANDL, 2, @ck_end)
+    readreg(core#EDMASTL, 2, @st)
+    readreg(core#EDMANDL, 2, @nd)
 '    ser.printf1(@"EDMASTL: %x\n", st)
 '    ser.printf1(@"EDMANDL: %x\n", nd)
 
@@ -451,6 +451,7 @@ PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
     fifowrptr(ck_end)
 
     wrword_msbf(chk)
+    intclear(1 << 5)
 
 PUB IntClear(mask)
 ' Clear interrupts
