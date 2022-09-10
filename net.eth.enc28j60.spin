@@ -67,7 +67,6 @@ PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
 
             repeat until clkready{}
             reset
-            time.msleep(5)
             time.msleep(30)
             return
     ' if this point is reached, something above failed
@@ -1155,17 +1154,17 @@ PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
             byte[ptr_buff][1] := spi.rd_byte{}
             outa[_CS] := 1
 
-PRI regBits_Clr(reg, field)
-' Clear bitfield 'field' in Ethernet register 'reg'
+PRI regBits_Clr(reg_nr, field)
+' Clear bitfield 'field' in Ethernet reg_nrister 'reg_nr'
     outa[_CS] := 0
-    spi.wr_byte(core#BFC | reg)
+    spi.wr_byte(core#BFC | reg_nr)
     spi.wr_byte(field)
     outa[_CS] := 1
 
-PRI regBits_Set(reg, field)
-' Set bitfield 'field' in Ethernet register 'reg'
+PRI regBits_Set(reg_nr, field)
+' Set bitfield 'field' in Ethernet reg_nrister 'reg_nr'
     outa[_CS] := 0
-    spi.wr_byte(core#BFS | reg)
+    spi.wr_byte(core#BFS | reg_nr)
     spi.wr_byte(field)
     outa[_CS] := 1
 

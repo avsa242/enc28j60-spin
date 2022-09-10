@@ -1,14 +1,21 @@
 {
     --------------------------------------------
-    Filename: net.eth.enc28j60.spin2
+    Filename: net.eth.enc28j60.spin
     Author: Jesse Burt
-    Description: Driver for the ENC28J60 Ethernet Transceiver (P2 version)
+    Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 2022
-    Started Mar 28, 2022
-    Updated Mar 28, 2022
+    Started Feb 21, 2022
+    Updated Sep 10, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
+#include "protocol.net.eth-ii.spin2"
+#include "protocol.net.ip.spin2"
+#include "protocol.net.arp.spin2"
+#include "protocol.net.udp.spin2"
+#include "protocol.net.bootp.spin2"
+#include "protocol.net.icmp.spin2"
+#include "protocol.net.tcp.spin2"
 
 CON
 
@@ -47,20 +54,19 @@ OBJ
 PUB Null()
 ' This is not a top-level object
 
-PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ=1_000_000): status
+PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
 ' Start using custom IO pins
     if lookdown(CS_PIN: 0..63) and lookdown(SCK_PIN: 0..63) and {
 }   lookdown(MOSI_PIN: 0..63) and lookdown(MISO_PIN: 0..63)
-        if (status := spi.init(SCK_PIN, MOSI_PIN, MISO_PIN, core.SPI_MODE, {
-}       SCK_FREQ))
-            waitms(core.T_POR)                  ' wait for device startup
+        if (status := spi.init(SCK_PIN, MOSI_PIN, MISO_PIN, core.SPI_MODE))
+            waitms(core.T_POR)             ' wait for device startup
             _CS := CS_PIN                       ' copy i/o pin to hub var
             pinh(_CS)
             _curr_bank := -1                    ' establish initial bank
 
             repeat until clkready()
             reset()
-            waitms(5)
+            waitms(30)
             return
     ' if this point is reached, something above failed
     ' Re-check I/O pin assignments, bus speed, connections, power
@@ -117,7 +123,7 @@ PUB Preset_FDX
 
     phyloopback(false)      ' PHCON1
     phypowered(true)        ' PHCON1
-    phyfullduplex(true)     ' PHCON1
+    phyfullduplex(true)    ' PHCON1
     fullduplex(true)
 
     phyledamode(%100)       ' PHLCON LED A: display link status
@@ -125,7 +131,7 @@ PUB Preset_FDX
     phyledstretch(true)     ' lengthen LED pulses
     rxenabled(true)
 
-PUB B2BInterPktGap(dly): curr_dly  'XXX tentatively named
+PUB B2BInterPktGap(dly=-2): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for back-to-back packets
 '   Valid values: 0..127
 '   Any other value polls the chip and returns the current setting
@@ -139,7 +145,7 @@ PUB B2BInterPktGap(dly): curr_dly  'XXX tentatively named
             readreg(core.MABBIPG, 1, @curr_dly)
             return
 
-PUB BackOff(state): curr_state  'XXX tentatively named
+PUB BackOff(state=-2): curr_state  'XXX tentatively named
 ' Enable backoff
 '   Valid values:
 '      *TRUE (-1 or 1): after collision, MAC will delay using
@@ -158,7 +164,7 @@ PUB BackOff(state): curr_state  'XXX tentatively named
     state := ((curr_state & core.NOBKOFF_MASK) | state)
     writereg(core.MACON4, 1, @state)
 
-PUB BackPressBackOff(state): curr_state 'XXX tentatively named
+PUB BackPressBackOff(state=-2): curr_state 'XXX tentatively named
 ' Enable backoff during backpressure
 '   Valid values:
 '      *TRUE (-1 or 1): after causing a collision, MAC will delay using
@@ -177,6 +183,10 @@ PUB BackPressBackOff(state): curr_state 'XXX tentatively named
     state := ((curr_state & core.BPEN_MASK) | state)
     writereg(core.MACON4, 1, @state)
 
+PUB CalcChksum()
+' Use DMA engine to calculate checksum
+    regbits_set(core.ECON1, core.DMAST_BITS | core.CSUMEN_BITS)
+
 PUB ClkReady(): status
 ' Flag indicating clock is ready
 '   Returns: TRUE (-1) or FALSE (0)
@@ -184,7 +194,7 @@ PUB ClkReady(): status
     readreg(core.ESTAT, 1, @status)
     return ((status & core.CLKRDY_BITS) == 1)
 
-PUB CollisionWin(nr_bytes): curr_nr 'XXX tentatively named
+PUB CollisionWin(nr_bytes=-2): curr_nr 'XXX tentatively named
 ' Set collision window, in number of bytes
 '   Valid values: 0..63 (default: 55)
 '   Any other value polls the chip and returns the current setting
@@ -197,7 +207,17 @@ PUB CollisionWin(nr_bytes): curr_nr 'XXX tentatively named
             readreg(core.MACLCON2, 1, @curr_nr)
             return
 
-PUB FIFOPtrAutoInc(state): curr_state
+PUB CurrPtr(): p
+
+    return fifowrptr(-2)
+
+PUB DMAReady(): flag
+' Flag indicating DMA engine is ready
+    flag := 0
+    readreg(core.ECON1, 1, @flag)
+    return ((flag & core.DMAST_BITS) == 0)
+
+PUB FIFOPtrAutoInc(state=-2): curr_state
 ' Auto-increment FIFO pointer when writing
 '   Valid values: TRUE (-1) or FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -212,7 +232,7 @@ PUB FIFOPtrAutoInc(state): curr_state
             readreg(core.ECON2, 1, @curr_state)
             return (((curr_state >> core.AUTOINC) & 1) == 1)
 
-PUB FIFORdPtr(rxpos): curr_ptr
+PUB FIFORdPtr(rxpos=-2): curr_ptr
 ' Set read position within FIFO
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -224,7 +244,7 @@ PUB FIFORdPtr(rxpos): curr_ptr
             readreg(core.ERDPTL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFORXEnd(rxe): curr_ptr
+PUB FIFORXEnd(rxe=-2): curr_ptr
 ' Set ending position within FIFO for RX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -236,7 +256,7 @@ PUB FIFORXEnd(rxe): curr_ptr
             readreg(core.ERXNDL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFORXRdPtr(rxrd): curr_rdpos
+PUB FIFORXRdPtr(rxrd=-2): curr_rdpos
 ' Set receive read pointer XXX clarify
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -248,7 +268,7 @@ PUB FIFORXRdPtr(rxrd): curr_rdpos
             readreg(core.ERXRDPTL, 2, @curr_rdpos)
             return curr_rdpos
 
-PUB FIFORXWrPtr(rxwr): curr_wrpos
+PUB FIFORXWrPtr(rxwr=-2): curr_wrpos
 ' Set receive write pointer XXX clarify
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -260,7 +280,7 @@ PUB FIFORXWrPtr(rxwr): curr_wrpos
             readreg(core.ERXWRPTL, 2, @curr_wrpos)
             return curr_wrpos
 
-PUB FIFORXStart(rxs): curr_ptr
+PUB FIFORXStart(rxs=-2): curr_ptr
 ' Set starting position within FIFO for RX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -272,7 +292,7 @@ PUB FIFORXStart(rxs): curr_ptr
             readreg(core.ERXSTL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFOTXEnd(ptr): curr_ptr
+PUB FIFOTXEnd(ptr=-2): curr_ptr
 ' Set starting position within FIFO for TX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -284,7 +304,7 @@ PUB FIFOTXEnd(ptr): curr_ptr
             readreg(core.ETXNDL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFOTXStart(ptr): curr_ptr
+PUB FIFOTXStart(ptr=-2): curr_ptr
 ' Set starting position within FIFO for TX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -296,7 +316,7 @@ PUB FIFOTXStart(ptr): curr_ptr
             readreg(core.ETXSTL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFOWrPtr(ptr): curr_ptr
+PUB FIFOWrPtr(ptr=-2): curr_ptr
 ' Set write position within FIFO
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -308,7 +328,7 @@ PUB FIFOWrPtr(ptr): curr_ptr
             readreg(core.EWRPTL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FrameLenCheck(state): curr_state    'XXX tentatively named
+PUB FrameLenCheck(state=-2): curr_state    'XXX tentatively named
 ' Enable frame length checking
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -323,7 +343,7 @@ PUB FrameLenCheck(state): curr_state    'XXX tentatively named
     state := ((curr_state & core.FRMLNEN_MASK) | state)
     writereg(core.MACON3, 1, @state)
 
-PUB FramePadding(mode): curr_md | txcrcen    'XXX tentatively named
+PUB FramePadding(mode=-2): curr_md | txcrcen    'XXX tentatively named
 ' Set frame padding mode
 '   Valid values:
 '       VLAN (%101):
@@ -392,11 +412,39 @@ PUB HDXLoopback(state): curr_state
     state := ((curr_state & core.HDLDIS_MASK) | state)
     writereg(core.PHCON2, 1, @state)
 
+PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
+
+    ck_st += TXSTART+1
+    ck_end += TXSTART
+
+    writereg(core.EDMASTL, 2, @ck_st)
+    writereg(core.EDMANDL, 2, @ck_end)
+    readreg(core.EDMASTL, 2, @st)
+    readreg(core.EDMANDL, 2, @nd)
+
+    { ERRATA .15: Wait for receive to finish }
+    repeat while rxbusy()
+
+    calcchksum()
+
+    repeat until dmaready()
+
+    ck_end := ck_dest + TXSTART+1
+
+    chk := 0
+    readreg(core.EDMACSL, 2, @chk)
+
+    fifowrptr(ck_end)
+
+    wrword_msbf(chk)
+
 PUB IntClear(mask)
 ' Clear interrupts
 '   Valid values:
-'       Bits: 5, 3, 1, 0 (set a bit to clear the corresponding interrupt flag)
+'       Bits: 6..3, 1, 0 (set a bit to clear the corresponding interrupt flag)
+'       6: packet received
 '       5: DMA copy or checksum calculation has completed
+'       4: link established
 '       3: transmit has ended
 '       1: transmit error
 '       0: receive error: insufficient buffer space
@@ -442,6 +490,19 @@ PUB Interrupt(): int_src
 '           or PktCnt() >= 255 (call PktDec())
     int_src := 0
     readreg(core.EIR, 1, @int_src)
+
+PUB IntMask(mask)
+' Enable interrupt flags
+'   Valid values:
+'       Bits: 6..3, 1, 0
+'       6: packet received
+'       5: DMA copy or checksum calculation has completed
+'       4: link established
+'       3: transmit has ended
+'       1: transmit error
+'       0: receive error: insufficient buffer space
+    mask &= core.EIE_MASK
+    writereg(core.EIE, 1, @mask)
 
 PUB MACRXEnabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
@@ -716,6 +777,63 @@ PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
         curr_mask := 0
         readreg(core.ERXFCON, 1, @curr_mask)
 
+PUB RdBlk_LSBF(ptr_buff, len): ptr
+
+    case len
+        1..8191:
+            pinl(_CS)
+            spi.wr_byte(core.RD_BUFF)
+            spi.rdblock_lsbf(ptr_buff, len)
+            pinh(_CS)
+
+PUB RdBlk_MSBF(ptr_buff, len): ptr | i
+
+    case len
+        1..8191:
+            pinl(_CS)
+            spi.wr_byte(core.RD_BUFF)
+            repeat i from len-1 to 0
+                byte[ptr_buff][i] := spi.rd_byte()'spi.rdblock_msbf(ptr_buff, len)
+            pinh(_CS)
+
+PUB Rd_Byte(): b
+
+    pinl(_CS)
+    spi.wr_byte(core.RD_BUFF)
+    b := spi.rd_byte()
+    pinh(_CS)
+
+PUB RdLong_LSBF(): l
+
+    pinl(_CS)
+    spi.wr_byte(core.RD_BUFF)
+    l := spi.rdlong_lsbf()
+    pinh(_CS)
+
+PUB RdLong_MSBF(): l | i
+
+    pinl(_CS)
+    spi.wr_byte(core.RD_BUFF)
+    repeat i from 3 to 0
+        l.byte[i] := spi.rd_byte()
+    pinh(_CS)
+
+PUB RdWord_LSBF(): w
+
+    pinl(_CS)
+    spi.wr_byte(core.RD_BUFF)
+    w := spi.rdword_lsbf()
+    pinh(_CS)
+
+PUB RdWord_MSBF(): w
+
+    pinl(_CS)
+    spi.wr_byte(core.RD_BUFF)
+'    w := spi.rdword_msbf()
+    w.byte[1] := spi.rd_byte()
+    w.byte[0] := spi.rd_byte()
+    pinh(_CS)
+
 PUB Reset()
 ' Perform soft-reset
     cmd(core.SRC)
@@ -724,6 +842,12 @@ PUB RevID(): id
 ' Get device revision
     id := 0
     readreg(core.EREVID, 1, @id)
+
+PUB RXBusy(): flag
+
+    flag := 0
+    readreg(core.ESTAT, 1, @flag)
+    return ((flag & core.RXBUSY_BITS) <> 0)
 
 PUB RXEnabled(state): curr_state
 ' Enable reception of packets
@@ -765,6 +889,11 @@ PUB RXPayload(ptr_buff, nr_bytes)
             spi.wr_byte(core.RD_BUFF)
             spi.rdblock_lsbf(ptr_buff, nr_bytes)
             pinh(_CS)
+
+PUB SetPtr(p)
+
+'    return 0
+    fifowrptr(p)
 
 PUB TXDefer(state): curr_state  'XXX tentatively named
 ' Defer transmission
@@ -836,6 +965,79 @@ PUB TXPayload(ptr_buff, nr_bytes)
             spi.wr_byte(core.WR_BUFF)
             spi.wrblock_lsbf(ptr_buff, nr_bytes)
             pinh(_CS)
+
+PUB WrBlk_LSBF(ptr_buff, len): ptr
+
+    case len
+        1..8191:
+            pinl(_CS)
+            spi.wr_byte(core.WR_BUFF)
+            spi.wrblock_lsbf(ptr_buff, len)
+            pinh(_CS)
+
+PUB WrBlk_MSBF(ptr_buff, len): ptr | i
+
+    case len
+        1..8191:
+            pinl(_CS)
+            spi.wr_byte(core.WR_BUFF)
+'            spi.wrblock_msbf(ptr_buff, len)
+            repeat i from len-1 to 0
+                spi.wr_byte(byte[ptr_buff][i])
+            pinh(_CS)
+
+PUB Wr_Byte(b): len
+
+    pinl(_CS)
+    spi.wr_byte(core.WR_BUFF)
+    spi.wr_byte(b)
+    pinh(_CS)
+    return 1
+
+PUB Wr_ByteX(b, nr_bytes): len
+
+    pinl(_CS)
+    spi.wr_byte(core.WR_BUFF)
+    repeat nr_bytes
+        spi.wr_byte(b)
+    pinh(_CS)
+    return nr_bytes
+
+PUB WrLong_LSBF(l): len
+
+    pinl(_CS)
+    spi.wr_byte(core.WR_BUFF)
+    spi.wrlong_lsbf(l)
+    pinh(_CS)
+    return 4
+
+PUB WrLong_MSBF(l): len | i
+
+    pinl(_CS)
+    spi.wr_byte(core.WR_BUFF)
+'    spi.wrlong_msbf(l)
+    repeat i from 3 to 0
+        spi.wr_byte(l.byte[i])
+    pinh(_CS)
+    return 4
+
+PUB WrWord_LSBF(w): len
+
+    pinl(_CS)
+    spi.wr_byte(core.WR_BUFF)
+    spi.wrword_lsbf(w)
+    pinh(_CS)
+    return 2
+
+PUB WrWord_MSBF(w): len
+
+    pinl(_CS)
+    spi.wr_byte(core.WR_BUFF)
+'    spi.wrword_msbf(w)
+    spi.wr_byte(w.byte[1])
+    spi.wr_byte(w.byte[0])
+    pinh(_CS)
+    return 2
 
 PRI bankSel(bank_nr): curr_bank
 ' Select register bank
@@ -1003,22 +1205,21 @@ PRI writeReg(reg_nr, nr_bytes, ptr_buff) | i
 
 DAT
 {
-    --------------------------------------------------------------------------------------------------------
-    TERMS OF USE: MIT License
+Copyright 2022 Jesse Burt
 
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-    associated documentation files (the "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-    following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-    The above copyright notice and this permission notice shall be included in all copies or substantial
-    portions of the Software.
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-    --------------------------------------------------------------------------------------------------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
+

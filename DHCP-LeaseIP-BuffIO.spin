@@ -296,11 +296,13 @@ PUB ipv4_updchksum(length) | ipchk, ptr_tmp
 PUB process_arp{} | opcode
 ' Process ARP message
     net.rd_arp_msg{}
+    show_arp_msg(net.arp_opcode{})
     if (net.arp_opcode{} == net#ARP_REQ)
         { if we're currently bound to an IP, and the ARP request is for
             our IP, send a reply confirming we have it }
         if ( (_dhcp_state => BOUND) and (net.arp_targetprotoaddr{} == _my_ip) )
             arp_reply{}
+            show_arp_msg(net.arp_opcode{})
 
 PUB process_bootp{}
 ' Process BOOTP/DHCP message
@@ -335,6 +337,9 @@ PUB process_icmp{} | icmp_st, frm_end, ipchk, icmpchk
         { ECHO request (ping) }
             net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
             if ( (_dhcp_state => BOUND) and (net.ip_destaddr{} == _my_ip) )
+                ser.fgcolor(ser#GREEN)
+                ser.strln(@"PING!")
+                ser.fgcolor(ser#GREY)
                 start_frame{}
                 ethii_reply{}
                 icmp_st := ipv4_reply{}
@@ -409,7 +414,7 @@ PUB show_mac_addr(ptr_premsg, ptr_addr, ptr_postmsg) | i
     if (ptr_premsg)
         ser.str(ptr_premsg)
     repeat i from 0 to 5
-        ser.hex(byte[ptr_addr][i], 2)
+        ser.hexs(byte[ptr_addr][i], 2)
         if (i < 5)
             ser.char(":")
     if (ptr_postmsg)
@@ -420,7 +425,7 @@ PUB show_mac_oui(ptr_premsg, ptr_addr, ptr_postmsg) | i
     if (ptr_premsg)
         ser.str(ptr_premsg)
     repeat i from 0 to 2
-        ser.hex(byte[ptr_addr][i], 2)
+        ser.hexs(byte[ptr_addr][i], 2)
         if (i < 2)
             ser.char(":")
     if (ptr_postmsg)

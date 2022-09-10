@@ -343,6 +343,7 @@ CON
 
 { bank-agnostic regs }
     EIE             = ETH | $1B
+    EIE_MASK        = $7B
 
     EIR             = ETH | $1C
     EIR_MASK        = $7B
