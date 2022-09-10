@@ -2,13 +2,15 @@
     --------------------------------------------
     Filename: DHCP-LeaseIP-DirectIO.spin
     Author: Jesse Burt
-    Description: Demo using the ENC28J60 driver and preliminary network
-        protocol objects to lease an IP address using DHCP from a remote server
-        for 2 minutes, and renew when the lease expires
-        (utilizes ENC28J60 native FIFO I/O)
+    Description: Demo using the ENC28J60 driver and preliminary network protocols
+        * attempts to lease an IP address using DHCP from a remote server
+        * requests 2 minute lease (what it gets may depend on your network)
+        * renews the IP lease when it expires
+        * responds to ICMP Echo requests (ping)
+        * assembles frames directly on the chip
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Sep 8, 2022
+    Updated Sep 10, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -28,6 +30,11 @@ CON
     SCK_PIN     = 2
     MOSI_PIN    = 3
     MISO_PIN    = 4
+
+{ set ICMP echo data buffer size to accommodate a particular implementation }
+{   of the 'ping' utility on the remote node }
+{   can be WINDOWS_PING (32), LINUX_PING (48) or any arbitrary number }
+    ICMP_DAT_LEN= LINUX_PING
 
 ' --
 
@@ -49,12 +56,16 @@ CON
     RENEWING    = 6
     REBINDING   = 7
 
+    { _default_ data sizes for OS ping utilities }
+    LINUX_PING  = 48
+    WINDOWS_PING= 32
+
 OBJ
 
     cfg : "core.con.boardcfg.ybox2"
     ser : "com.serial.terminal.ansi"
     time: "time"
-    eth : "net.eth.enc28j60"
+    net : "net.eth.enc28j60"
 #ifdef YBOX2
     fsyn: "signal.synth"
 #endif
@@ -67,14 +78,13 @@ VAR
     long _tmr_stack[50], _timer_set, _dly
     long _dhcp_state
     long _my_ip
-    long _xid
 
     { receive status vector }
     word _nxtpkt, _rxlen, _rxstatus
 
-    word _ethii_st, _ip_st, _udp_st, _dhcp_st
+    word _ip_st, _udp_st
 
-    byte _attempt
+    byte _icmp_data[ICMP_DAT_LEN]
 
 DAT
 
@@ -83,46 +93,42 @@ DAT
 
     { DHCP parameters to request }
     _dhcp_params
-        byte eth#IP_LEASE_TM
-        byte eth#DEF_IP_TTL
-        byte eth#DNS
-        byte eth#ROUTER
-        byte eth#SUBNET_MASK
+        byte net#IP_LEASE_TM
+        byte net#DEF_IP_TTL
+        byte net#DNS
+        byte net#ROUTER
+        byte net#SUBNET_MASK
 
-PUB Main{} | rn
+PUB main{} | rn
 
     setup{}
 
     math.rndseed(cnt)
-    eth.pktfilter(0)
-    eth.preset_fdx{}
-    eth.nodeaddress(@_mac_local) ' set and read back MAC address
-    eth.getnodeaddress(@_mac_local)
-    showmacaddr(@"MAC Addr: ", @_mac_local)
-    ser.newline{}
-    ser.printf1(@"Chip rev: %x\n\r", eth.revid{})
+    net.pktfilter(0)
+    net.preset_fdx{}
+
+    net.nodeaddress(@_mac_local)
 
     ser.str(@"waiting for PHY link...")
-    repeat until eth.phylinkstate{} == eth#UP
+    repeat until net.phylinkstate{} == net#UP
     ser.strln(@"link UP")
 
     _dly := 4
-    _xid := (math.rndi($7fff_ffff) & $7fff_fff0)
-
-    _dhcp_state := 0
-
+    _dhcp_state := INIT
+    net.reset_bootp{}
     repeat
         case _dhcp_state
             INIT:
-                discover{}
+                net.bootp_setxid(math.rndi(posx) & $7fff_fff0)
                 _dhcp_state++
             SELECTING:
+                dhcp_msg(net#DHCPDISCOVER)
                 rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
                 _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
-                    if (eth.pktcnt{})           ' pkt received?
-                        getframe{}
-                        if (processframe{} == eth#DHCPOFFER)
+                    if (net.pktcnt{})           ' pkt received?
+                        get_frame{}
+                        if (process_ethii{} == net#DHCPOFFER)
                             { offer received from DHCP server; request it }
                             _dhcp_state := REQUESTING
                             quit                ' got an offer; next state
@@ -132,245 +138,112 @@ PUB Main{} | rn
                         +/- 1sec, up to 64secs, until the next attempt }
                     if (_dly < 64)
                         _dly *= 2
-                    _xid++
-                    _dhcp_state := INIT
+                    net.bootp_inc_xid{}
                     ser.strln(@"No response - retrying")
                 else
                     _dly := 4                   ' reset delay time
             REQUESTING:
-                request{}
-                _dhcp_state++
-            3:
+                dhcp_msg(net#DHCPREQUEST)
                 rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
                 _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
-                    if (eth.pktcnt{})
-                        getframe{}
-                        if (processframe{} == eth#DHCPACK)
+                    if (net.pktcnt{})
+                        get_frame{}
+                        if (process_ethii{} == net#DHCPACK)
                             { server acknowledged request; we're now bound
                                 to this IP }
                             _dhcp_state := BOUND
                             quit
                 while _timer_set
-                if (_dhcp_state == 3)
+                if (_dhcp_state == REQUESTING)
                     if (_dly < 64)
                         _dly *= 2
-                    _dhcp_state := REQUESTING
             BOUND:
-                _my_ip := eth.bootp_yourip{}
-                ser.strln(@"---")
-                ser.fgcolor(ser#GREEN)
-                showipaddr(@"My IP: ", _my_ip)
-                ser.fgcolor(ser#WHITE)
-                ser.newline{}
-                ser.printf1(@"Lease time: %dsec\n\r", eth.dhcp_ipleasetime{})
-                ser.printf1(@"Rebind time: %dsec\n\r", eth.dhcp_iprebindtime{})
-                ser.printf1(@"Renewal time: %dsec\n\r", eth.dhcp_iprenewtime{})
-                ser.strln(@"---")
-                { set a timer for the lease expiry }
-                _timer_set := eth.dhcp_ipleasetime{}
-                _dhcp_state++
-            6:
+                if (_my_ip == 0)
+                    _my_ip := net.bootp_yourip{}
+                    ser.fgcolor(ser#LTGREEN)
+                    show_ip_addr(@"IP: ", _my_ip, 0)
+                    ser.fgcolor(ser#GREY)
+                    ser.newline{}
+                    { set a timer for the lease expiry }
+                    _timer_set := net.dhcp_ipleasetime{}
                 ifnot (_timer_set)
                     { when the lease timer expires, reset everything back
                         to the initial state and try to get a new lease }
-                    ser.strln(@"Lease expired. Renewing IP")
-                    _xid := (math.rndi($7fff_ffff) & $7fff_fff0)
+                    _my_ip := 0
                     _dhcp_state := INIT
-                if (eth.pktcnt{})
+                if (net.pktcnt{})
                     { if any frames are received, process them; they might be
                         the server sending ARP requests confirming we're
                         bound to the IP }
-                    getframe{}
-                    processframe{}
-                if (ser.rxcheck{} == "l")
-                    { press 'l' at any time to see how much time we have left
-                        on our lease }
-                    ser.printf1(@"Lease time remaining: %dsec\n\r", _timer_set)
+                    get_frame{}
+                    process_ethii{}
 
-PUB Discover{} | ipchk, frm_end
-' Construct a DHCPDISCOVER message, and transmit it
-    wordfill(@_ethii_st, 0, 4)
-    startframe{}
-    _ethii_st := eth.currptr{}                         ' mark start of Eth-II data
-'    ser.printf1(@"Discover(): currptr() = %d\n\r", _ethii_st)
-    eth.ethii_setdestaddr(@_mac_bcast)
-    eth.ethii_setsrcaddr(@_mac_local)
-    eth.ethii_setethertype(ETYP_IPV4)
-    eth.wr_ethii_frame{}
-
-    _ip_st := eth.currptr{}                    ' mark start of IPV4 data
-    eth.ip_setversion(4)
-    eth.ip_sethdrlen(20)
-    eth.ip_setdscp(0)
-    eth.ip_setecn(0)
-    eth.ip_setdgramlen(0)
-    eth.ip_setmsgident($0001)
-    eth.ip_setflags(%010)   'XXX why?
-    eth.ip_setfragoffset(0)
-    eth.ip_setttl(128)
-    eth.ip_setl4proto(eth#UDP)
-    eth.ip_sethdrchk($0000)
-    eth.ip_setsrcaddr($00_00_00_00)
-    eth.ip_setdestaddr($ff_ff_ff_ff)
-    eth.wr_ip_header{}
-
-    _udp_st := eth.currptr{}                   ' mark start of UDP data
-    eth.udp_setsrcport(svc#BOOTP_C)
-    eth.udp_setdestport(svc#BOOTP_S)
-    eth.udp_setchksum(0)
-    eth.wr_udp_header{}
-
-    _dhcp_st := eth.currptr{}                  ' mark start of BOOTP data
-    eth.bootp_setopcode(eth#BOOT_REQ)
-    eth.bootp_sethdwtype(eth#ETHERNET)
-    eth.bootp_sethdwaddrlen(MACADDR_LEN)
-    eth.bootp_sethops(0)
-    eth.bootp_setxid(_xid)
-    eth.bootp_setleaseelapsed(1)
-    eth.bootp_setbcastflag(true)
-    eth.bootp_setclientip($00_00_00_00)
-    eth.bootp_setyourip($00_00_00_00)
-    eth.bootp_setsrvip($00_00_00_00)
-    eth.bootp_setgwyip($00_00_00_00)
-    eth.bootp_setclientmac(@_mac_local)
-    eth.dhcp_setparamsreqd(@_dhcp_params, 5)
-    eth.dhcp_setipleasetime(120)                      ' request 2min lease
-    eth.dhcp_setmaxmsglen(MTU_MAX)
-    eth.dhcp_setmsgtype(eth#DHCPDISCOVER)
-    eth.wr_dhcp_msg{}
-    frm_end := eth.currptr{}
-
-    { update UDP header with length: UDP header + DHCP message }
-    ser.printf1(@"updating UDP header length (pos is %d)\n\r", _udp_st + eth#UDP_DGRAM_LEN)
-    eth.setptr(_udp_st+eth#UDP_DGRAM_LEN)
-    eth.wrword_msbf(eth.udp_hdrlen{} + eth.dhcp_msglen{})
-    eth.setptr(frm_end)
-
-    { update IP header with length: IP header + UDP header + DHCP message }
-    eth.ip_setdgramlen(eth.ip_hdrlen{} + eth.udp_hdrlen{} + eth.dhcp_msglen{})
-    eth.setptr(_ip_st + eth#IP_TLEN)
-    eth.wrword_msbf(eth.ip_dgramlen{})
-
-    eth.inetchksum(eth#IP_ABS_ST, eth#IP_ABS_ST+eth#IP_HDR_SZ, {
-}   eth#IP_ABS_ST+eth#IP_CKSUM)
-    eth.setptr(frm_end)
-    hexdump
-    ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPDISCOVER]\n\r", frm_end-TXSTART)
-    send_frame{}
-
-pub hexdump | rdptr, curr_byte, len, col
-
-    rdptr := eth.fifowrptr(-2)
-    ser.printf1(@"hexdump() start: rdptr = %d\n\r", rdptr)
-
-    eth.fifordptr(eth.fifotxstart(-2))
-    len := rdptr-TXSTART
-    col := 0
-    repeat len
-        ser.hexs(eth.rd_byte, 2)
-        ser.char(" ")
-        col++
-        if (col > 15)
-            col := 0
-            ser.newline
-    ser.printf1(@"hexdump() end: rdptr = %d\n\r", rdptr)
-
-PUB Request{} | ipchk, frm_end
-' Construct a DHCPREQUEST message, and transmit it
-    wordfill(@_ethii_st, 0, 4)
-    startframe{}
-    _ethii_st := eth.currptr{}
-    eth.ethii_setdestaddr(@_mac_bcast)
-    eth.ethii_setsrcaddr(@_mac_local)
-    eth.ethii_setethertype(ETYP_IPV4)
-    eth.wr_ethii_frame{}
-
-    _ip_st := eth.currptr{}
-    eth.ip_setversion(4)
-    eth.ip_sethdrlen(20)
-    eth.ip_setdscp(0)
-    eth.ip_setecn(0)
-    eth.ip_setdgramlen(0)
-    eth.ip_setmsgident($0001)
-    eth.ip_setflags(%010)   'XXX why?
-    eth.ip_setfragoffset(0)
-    eth.ip_setttl(128)
-    eth.ip_setl4proto(eth#UDP)
-    eth.ip_sethdrchk($0000)
-    eth.ip_setsrcaddr($00_00_00_00)
-    eth.ip_setdestaddr($ff_ff_ff_ff)
-    eth.wr_ip_header{}
-
-    _udp_st := eth.currptr{}
-    eth.udp_setsrcport(svc#BOOTP_C)
-    eth.udp_setdestport(svc#BOOTP_S)
-    eth.udp_setdgramlen(0)
-    eth.udp_setchksum($0000)
-    eth.wr_udp_header{}
-
-    _dhcp_st := eth.currptr{}
-    eth.bootp_setopcode(eth#BOOT_REQ)
-    eth.bootp_sethdwtype(eth#ETHERNET)
-    eth.bootp_sethdwaddrlen(MACADDR_LEN)
-    eth.bootp_setxid(_xid)
-    eth.bootp_setleaseelapsed(1)
-    eth.bootp_setbcastflag(true)
-    eth.bootp_setclientmac(@_mac_local)
-    eth.dhcp_setparamsreqd(@_dhcp_params, 5)
-    eth.dhcp_setmaxmsglen(MTU_MAX)
-    eth.dhcp_setipleasetime(120)  '2min
-    eth.dhcp_setmsgtype(eth#DHCPREQUEST)
-    eth.wr_dhcp_msg{}
-    frm_end := eth.currptr{}
-
-    { update UDP header with length: UDP header + DHCP message }
-    eth.setptr(_udp_st+eth#UDP_DGRAM_LEN)
-    eth.wrword_msbf(eth.udp_hdrlen{} + eth.dhcp_msglen{})
-    eth.setptr(frm_end)
-
-    { update IP header with length: IP header + UDP header + DHCP message }
-    eth.ip_setdgramlen(eth.ip_hdrlen{} + eth.udp_hdrlen{} + eth.dhcp_msglen{})
-    eth.setptr(_ip_st + eth#IP_TLEN)
-    eth.wrword_msbf(eth.ip_dgramlen{})
-
-    eth.inetchksum(eth#IP_ABS_ST, eth#IP_ABS_ST+eth#IP_HDR_SZ, {
-}   eth#IP_ABS_ST+eth#IP_CKSUM)
-    eth.setptr(frm_end)
-
-    ser.printf1(@"[TX: %d][IPv4][UDP][BOOTP][REQUEST][DHCPREQUEST]\n\r", eth.currptr{})
-    send_frame{}
-
-PUB ARP_Reply{}
+PUB arp_reply{}
 ' Construct ARP reply message
-    eth.ethii_setsrcaddr(@_mac_local)
-    eth.ethii_setdestaddr(eth.arp_senderhwaddr{})
-    eth.ethii_setethertype(ETYP_ARP)
-    eth.arp_sethwtype(eth#HRD_ETH)
-    eth.arp_setprototype(ETYP_IPV4)
-    eth.arp_sethwaddrlen(MACADDR_LEN)
-    eth.arp_setprotoaddrlen(IPV4ADDR_LEN)
-    eth.bootp_setopcode(eth#ARP_REPL)
-    eth.arp_settargethwaddr(eth.arp_senderhwaddr{})
-    eth.arp_settargetprotoaddr(eth.arp_senderprotoaddr{})
-    eth.arp_setsenderprotoaddr(_my_ip)
-    { is at }
-    eth.arp_setsenderhwaddr(@_mac_local)
+    start_frame{}
+    ethii_reply{}
+    { change only the settings that differ from the request }
+    net.arp_setopcode(net#ARP_REPL)
+    net.arp_settargethwaddr(net.arp_senderhwaddr{})
+    net.arp_settargetprotoaddr(net.arp_senderprotoaddr{})
+    net.arp_setsenderprotoaddr(_my_ip)
+    { /\- is at -\/ }
+    net.arp_setsenderhwaddr(@_mac_local)
 
-    eth.wr_ethii_frame{}
-    eth.wr_arp_msg{}
+    net.wr_arp_msg{}
+    send_frame{}
 
-PUB GetFrame{} | rdptr
+PUB dhcp_msg(msg_t) | tmp
+' Construct a DHCP message, and transmit it
+    tmp := 0
+
+    start_frame{}
+    ethii_new(@_mac_local, @_mac_bcast, ETYP_IPV4)
+    ipv4_new(net#UDP, $00_00_00_00, BCAST_IP)
+    udp_new(svc#BOOTP_C, svc#BOOTP_S)
+
+    net.bootp_setopcode(net#BOOT_REQ)
+    net.bootp_setbcastflag(true)
+    net.bootp_setclientmac(@_mac_local)
+    net.dhcp_setparamsreqd(@_dhcp_params, 5)
+    net.dhcp_setmaxmsglen(MTU_MAX)
+    net.dhcp_setipleasetime(120)                ' 2min
+    net.dhcp_setmsgtype(msg_t)
+    net.wr_dhcp_msg{}
+
+    { update UDP header with length: UDP header + DHCP message }
+    tmp := net.fifowrptr(-2)
+    net.setptr(_udp_st+net#UDP_DGRAM_LEN)
+    net.wrword_msbf(net.udp_hdrlen{} + net.dhcp_msglen{})
+    net.setptr(tmp)
+
+    { update IP header with length and checksum }
+    ipv4_updchksum(net.ip_hdrlen{} + net.udp_hdrlen{} + net.dhcp_msglen{})
+    send_frame{}
+
+PUB ethii_new(mac_src, mac_dest, ether_t)
+' Start new ethernet-II frame
+    net.ethii_setdestaddr(mac_dest)
+    net.ethii_setsrcaddr(mac_src)
+    net.ethii_setethertype(ether_t)
+    net.wr_ethii_frame{}
+
+PUB ethii_reply{}: pos
+' Set up/write Ethernet II frame as a reply to last received frame
+    net.ethii_setdestaddr(net.ethii_srcaddr{})
+    net.ethii_setsrcaddr(@_mac_local)
+    net.wr_ethii_frame{}
+    return net.fifowrptr(-2)
+
+PUB get_frame{} | rdptr
 ' Receive frame from ethernet device
     { get receive status vector }
-    eth.fifordptr(_nxtpkt)
-    eth.rxpayload(@_nxtpkt, 6)
+    net.fifordptr(_nxtpkt)
+    net.rxpayload(@_nxtpkt, 6)
 
-    ser.printf1(@"[RX: %d]", _rxlen)
     { reject oversized packets }
-    if (_rxlen =< MTU_MAX)
-' XXX        eth.rxpayload(@_buff, _rxlen)
-    else
+    ifnot (_rxlen =< MTU_MAX)
         ser.strln(@"[OVERSIZED]")
 
     { ERRATA: read pointer start must be odd; subtract 1 }
@@ -379,132 +252,184 @@ PUB GetFrame{} | rdptr
     if ((rdptr < RXSTART) or (rdptr > RXSTOP))
         rdptr := RXSTOP
 
-    eth.pktdec{}
+    net.pktdec{}
 
-    eth.fiforxrdptr(rdptr)
+    net.fiforxrdptr(rdptr)
 
-PRI ProcessARP{} | opcode
+PUB ipv4_new(l4_proto, src_ip, dest_ip)
+' Construct an IPV4 header
+'   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
+    _ip_st := net.fifowrptr(-2)                     ' mark start of IPV4 data
+    net.reset_ipv4{}
+    net.ip_setl4proto(l4_proto)
+    net.ip_setsrcaddr(src_ip)
+    net.ip_setdestaddr(dest_ip)
+    net.wr_ip_header{}
+
+PUB ipv4_reply{}: pos
+' Set up/write IPv4 header as a reply to last received header
+    net.ip_sethdrchk(0)                         ' init header checksum to 0
+    ipv4_new(net.ip_l4proto{}, _my_ip, net.ip_srcaddr{})
+    return net.fifowrptr(-2)
+
+PUB ipv4_updchksum(length) | ptr_tmp
+' Update IP header with checksum
+    ptr_tmp := net.fifowrptr(-2)                ' cache current pointer
+
+    { update IP header with specified length and calculate checksum }
+    net.ip_setdgramlen(length)
+    net.setptr(_ip_st + net#IP_TLEN)
+    net.wrword_msbf(net.ip_dgramlen{})
+    net.inetchksum(net#IP_ABS_ST, net#IP_ABS_ST+net#IP_HDR_SZ, {
+}   net#IP_ABS_ST+net#IP_CKSUM)
+
+    net.setptr(ptr_tmp)                         ' restore pointer pos
+
+PUB process_arp{} | opcode
 ' Process ARP message
-'    ser.hexdump(@_buff+eth.currptr{}, 0, 4, _rxlen, 16)
-    eth.rd_arp_msg{}
-    showarpmsg(opcode := eth.arp_opcode{})
-    case opcode
-        eth#ARP_REQ:
-            { if we're currently bound to an IP, and the ARP request is for
-                our IP, send a reply confirming we have it }
-            if (_dhcp_state => BOUND)
-                if (eth.arp_targetprotoaddr{} == _my_ip)
-                    startframe{}
-                    arp_reply{}
-                    ser.printf1(@"[TX: %d]", eth.currptr{})
-                    ser.str(@"[ARP]")
-                    ser.str(@"[REPLY] ")
-                    ser.fgcolor(ser#YELLOW)
-                    showarpmsg(eth#ARP_REPL)
-                    ser.fgcolor(ser#WHITE)
-                    send_frame{}
-        eth#ARP_REPL:
+    net.rd_arp_msg{}
+    if (net.arp_opcode{} == net#ARP_REQ)
+        { if we're currently bound to an IP, and the ARP request is for
+            our IP, send a reply confirming we have it }
+        if ( (_dhcp_state => BOUND) and (net.arp_targetprotoaddr{} == _my_ip) )
+            arp_reply{}
 
-PRI ProcessFrame{} | ether_t
-' Hand off the frame data to the appropriate handler
-'    ser.hexdump(@_buff, 0, 4, _rxlen, 16)
-'    eth.init(@_buff)
-    eth.rd_ethii_frame{}
-    ether_t := eth.ethii_ethertype{}
+PUB process_bootp{}
+' Process BOOTP/DHCP message
+    net.rd_bootp_msg{}
+    { BOOTP reply? }
+    if (net.bootp_opcode{} == net#BOOT_REPL)
+        if (net.dhcp_msgtype{} == net#DHCPOFFER)
+            return net#DHCPOFFER
+        if (net.dhcp_msgtype{} == net#DHCPACK)
+            return net#DHCPACK
 
-    { ARP? }
+PUB process_ethii{}: msg_t | ether_t
+' Process Ethernet-II frame
+    net.rd_ethii_frame{}
+    ether_t := net.ethii_ethertype{}
+    { route to the processor appropriate to the ethertype }
     if (ether_t == ETYP_ARP)
-        ser.str(@"[ARP]")
-'        ser.hexdump(@_buff, 0, 4, _rxlen, 16)
-        processarp{}
-    { IPv4? }
+    { ARP }
+        process_arp{}
     elseif (ether_t == ETYP_IPV4)
-        ser.str(@"[IPv4]")
-        eth.rd_ip_header{}
+    { IPv4 }
+        msg_t := process_ipv4{}
+
+PUB process_icmp{} | icmp_st, frm_end, icmp_end, icmpchk
+' Process ICMP messages
+    { if this node is bound to an IP and the echo request was directed to it, }
+    {   send a reply }
+    net.rd_icmp_msg{}
+    case net.icmp_msgtype{}
+        net#ECHO_REQ:
+        { ECHO request (ping) }
+            net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
+            if ( (_dhcp_state => BOUND) and (net.ip_destaddr{} == _my_ip) )
+                start_frame{}
+                ethii_reply{}
+                icmp_st := ipv4_reply{}
+
+                net.icmp_setchksum(0)
+                net.icmp_setmsgtype(net#ECHO_REPL)
+                net.icmp_setseqnr(net.icmp_seqnr{})
+                net.wr_icmp_msg{}
+
+                { echo the data that was received in the ping/echo request }
+                net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
+                frm_end := net.fifowrptr(-2)
+
+                ipv4_updchksum(net.ip_hdrlen{} + net.icmp_msglen{} + ICMP_DAT_LEN)
+
+                icmp_end := icmp_st + net.icmp_msglen + ICMP_DAT_LEN
+
+                { update ICMP checksum }    'XXX not functional
+                icmpchk := net.inetchksum(icmp_st, icmp_end, icmp_st+net#ICMP_CKSUM)
+                net.setptr(frm_end)
+
+                send_frame{}
+
+PUB process_ipv4{}: msg
+' Process IPv4 datagrams
+    net.rd_ip_header{}
+    case net.ip_l4proto{}
         { UDP? }
-        if (eth.ip_l4proto{} == eth#UDP)
-            ser.str(@"[UDP]")
-            eth.rd_udp_header{}
+        net#UDP:
+            net.rd_udp_header{}
             { BOOTP? }
-            if (eth.udp_destport{} == svc#BOOTP_C)
-                ser.str(@"[BOOTP]")
-                eth.rd_bootp_msg{}
-                { BOOTP reply? }
-                if (eth.bootp_opcode{} == eth#BOOT_REPL)
-                    ser.str(@"[REPLY]")
-                    if (eth.dhcp_msgtype{} == eth#DHCPOFFER)
-                        ser.strln(@"[DHCPOFFER]")
-                        return eth#DHCPOFFER
-                    if (eth.dhcp_msgtype{} == eth#DHCPACK)
-                        ser.strln(@"[DHCPACK]")
-                        return eth#DHCPACK
-        ser.newline{}
-    else
-        ser.str(@"[Unknown ethertype: ")
-        ser.hex(ether_t, 4)
-        ser.strln(@"]")
+            if (net.udp_destport{} == svc#BOOTP_C)
+                msg := process_bootp{}
+        net#TCP:
+#ifdef TCP_TEL
+            process_tcp{}
+#endif
+        net#ICMP:
+            process_icmp{}
 
-PRI send_frame{} | t_e
+PUB send_frame{}
 ' Send assembled ethernet frame
-    { send packet }
-    eth.fifotxstart(TXSTART)        'ETXSTL: TXSTART
-    t_e := eth.fifowrptr(-2)
-    eth.fifotxend(t_e)              'ETXNDL: TXSTART+len
-    eth.txenabled(true)             'send
+    { point to assembled ethernet frame and send it }
+    net.fifotxstart(TXSTART)                    ' ETXSTL: TXSTART
+    net.fifotxend(net.fifowrptr(-2))            ' ETXNDL: TXSTART+len
+    net.txenabled(true)                         ' send
 
-    ser.printf1(@"int flags: %08.8b\n\r", eth.interrupt{})
-    eth.fifordptr(t_e+1)
-    ser.str(@"TSV: ")
-    repeat 7
-        ser.hex(eth.rd_byte, 2)
-        ser.char(" ")
-    ser.newline{}
-
-PRI ShowARPMsg(opcode)
+PUB show_arp_msg(opcode)
 ' Show Wireshark-ish messages about the ARP message received
     case opcode
-        eth#ARP_REQ:
-            showipaddr(@"Who has ", eth.arp_targetprotoaddr{})
-            showipaddr(@"? Tell ", eth.arp_senderprotoaddr{})
-            ser.newline{}
-        eth#ARP_REPL:
-            showipaddr(0, eth.arp_senderprotoaddr{})
-            showmacaddr(@" is at ", eth.arp_senderhwaddr{})
-            ser.newline{}
+        net#ARP_REQ:
+            show_ip_addr(@"[Who has ", net.arp_targetprotoaddr{}, @"? Tell ")
+            show_ip_addr(0, net.arp_senderprotoaddr{}, string("]", 10, 13))
+        net#ARP_REPL:
+            show_ip_addr(@"[", net.arp_senderprotoaddr{}, @" is at ")
+            show_mac_addr(0, net.arp_senderhwaddr{}, string("]", 10, 13))
 
-PRI ShowIPAddr(ptr_msg, addr) | i
-' Display IP address, with optional preceding string (pass 0 to ignore)
-    if (ptr_msg)
-        ser.str(ptr_msg)
+PUB show_ip_addr(ptr_premsg, addr, ptr_postmsg) | i
+' Display IP address, with optional prefixed/postfixed strings (pass 0 to ignore)
+    if (ptr_premsg)
+        ser.str(ptr_premsg)
     repeat i from 0 to 3
         ser.dec(addr.byte[i])
         if (i < 3)
             ser.char(".")
+    if (ptr_postmsg)
+        ser.str(ptr_postmsg)
 
-PRI ShowMACAddr(ptr_msg, ptr_addr) | i
-' Display MAC address, with optional preceding string (pass 0 to ignore)
-    if (ptr_msg)
-        ser.str(ptr_msg)
+PUB show_mac_addr(ptr_premsg, ptr_addr, ptr_postmsg) | i
+' Display MAC address, with optional prefixed/postfixed strings (pass 0 to ignore)
+    if (ptr_premsg)
+        ser.str(ptr_premsg)
     repeat i from 0 to 5
         ser.hex(byte[ptr_addr][i], 2)
         if (i < 5)
             ser.char(":")
+    if (ptr_postmsg)
+        ser.str(ptr_postmsg)
 
-PRI ShowMACOUI(ptr_msg, ptr_addr) | i
+PUB show_mac_oui(ptr_premsg, ptr_addr, ptr_postmsg) | i
 ' Display OUI of MAC address, with optional preceding string (pass 0 to ignore)
-    if (ptr_msg)
-        ser.str(ptr_msg)
+    if (ptr_premsg)
+        ser.str(ptr_premsg)
     repeat i from 0 to 2
         ser.hex(byte[ptr_addr][i], 2)
-        if (i > 3)
+        if (i < 2)
             ser.char(":")
+    if (ptr_postmsg)
+        ser.str(ptr_postmsg)
 
-PRI StartFrame{}
+PUB start_frame{}
 ' Reset pointers, and add control byte to frame
-    eth.fifowrptr(TXSTART)
-    eth.wr_byte($00)                      ' per-frame control byte
+    net.fifowrptr(TXSTART)
+    net.wr_byte($00)                            ' per-frame control byte
 
-PRI cog_Timer{}
+PUB udp_new(src_p, dest_p)
+' Construct a UDP header
+    _udp_st := net.fifowrptr(-2)
+    net.reset_udp{}
+    net.udp_setsrcport(src_p)
+    net.udp_setdestport(dest_p)
+    net.wr_udp_header{}
+
+PRI cog_timer{}
 
     repeat
         repeat until _timer_set                 ' wait for a timer to be set
@@ -512,7 +437,7 @@ PRI cog_Timer{}
             time.sleep(1)
         while --_timer_set                      ' until timer expired
 
-PUB Setup{}
+PUB setup{}
 
     ser.start(SER_BAUD)
     time.msleep(30)
@@ -521,14 +446,16 @@ PUB Setup{}
 
     cognew(cog_timer{}, @_tmr_stack)
 #ifdef YBOX2
-    { YBOX2: feed the ENC28J60 a 25MHz clock, and give it time to lock onto it }
+    { YBOX2, or other boards that don't supply an external clock for the ENC28J60:
+        feed the ENC28J60 a 25MHz clock, and give it time to lock onto it }
     fsyn.synth("A", cfg#ENC_OSCPIN, 25_000_000)
     time.msleep(50)
 #endif
-    if (eth.startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN))
+    if (net.startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN))
         ser.strln(string("ENC28J60 driver started"))
     else
         ser.strln(string("ENC28J60 driver failed to start - halting"))
+        repeat
 
 DAT
 {

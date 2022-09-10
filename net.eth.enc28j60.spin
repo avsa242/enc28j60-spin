@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Sep 8, 2022
+    Updated Sep 10, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -433,12 +433,12 @@ PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
 
     ck_end := ck_dest + TXSTART+1
 
+    chk := 0
     readreg(core#EDMACSL, 2, @chk)
 
     fifowrptr(ck_end)
 
     wrword_msbf(chk)
-    intclear(1 << 5)
 
 PUB IntClear(mask)
 ' Clear interrupts
