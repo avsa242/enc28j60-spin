@@ -10,7 +10,7 @@
         * assembles frames directly on the chip
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Sep 10, 2022
+    Updated Sep 11, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -213,10 +213,10 @@ PUB dhcp_msg(msg_t) | tmp
     net.wr_dhcp_msg{}
 
     { update UDP header with length: UDP header + DHCP message }
-    tmp := net.fifo_wr_ptr(-2)
-    net.set_ptr(_udp_st+net#UDP_DGRAMLEN)
+    tmp := net.fifo_wr_ptr{}
+    net.fifo_set_wr_ptr(_udp_st+net#UDP_DGRAMLEN)
     net.wrword_msbf(net.udp_hdr_len{} + net.dhcp_msg_len{})
-    net.set_ptr(tmp)
+    net.fifo_set_wr_ptr(tmp)
 
     { update IP header with length and checksum }
     ipv4_updchksum(net.ip_hdr_len{} + net.udp_hdr_len{} + net.dhcp_msg_len{})
@@ -234,12 +234,12 @@ PUB ethii_reply{}: pos
     net.ethii_set_dest_addr(net.ethii_src_addr{})
     net.ethii_set_src_addr(@_mac_local)
     net.wr_ethii_frame{}
-    return net.fifo_wr_ptr(-2)
+    return net.fifo_wr_ptr{}
 
 PUB get_frame{} | rdptr
 ' Receive frame from ethernet device
     { get receive status vector }
-    net.fifo_rd_ptr(_nxtpkt)
+    net.fifo_set_rd_ptr(_nxtpkt)
     net.rx_payload(@_nxtpkt, 6)
 
     { reject oversized packets }
@@ -254,12 +254,12 @@ PUB get_frame{} | rdptr
 
     net.pkt_dec{}
 
-    net.fifo_rx_rd_ptr(rdptr)
+    net.fifo_set_rx_rd_ptr(rdptr)
 
 PUB ipv4_new(l4_proto, src_ip, dest_ip)
 ' Construct an IPV4 header
 '   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
-    _ip_st := net.fifo_wr_ptr(-2)                     ' mark start of IPV4 data
+    _ip_st := net.fifo_wr_ptr{}                     ' mark start of IPV4 data
     net.reset_ipv4{}
     net.ip_set_l4_proto(l4_proto)
     net.ip_set_src_addr(src_ip)
@@ -270,20 +270,20 @@ PUB ipv4_reply{}: pos
 ' Set up/write IPv4 header as a reply to last received header
     net.ip_set_hdr_chk(0)                         ' init header checksum to 0
     ipv4_new(net.ip_l4_proto{}, _my_ip, net.ip_src_addr{})
-    return net.fifo_wr_ptr(-2)
+    return net.fifo_wr_ptr{}
 
 PUB ipv4_updchksum(length) | ptr_tmp
 ' Update IP header with checksum
-    ptr_tmp := net.fifo_wr_ptr(-2)                ' cache current pointer
+    ptr_tmp := net.fifo_wr_ptr{}                ' cache current pointer
 
     { update IP header with specified length and calculate checksum }
     net.ip_set_dgram_len(length)
-    net.set_ptr(_ip_st + net#IP_TLEN)
+    net.fifo_set_wr_ptr(_ip_st + net#IP_TLEN)
     net.wrword_msbf(net.ip_dgram_len{})
     net.inet_chksum(net#IP_ABS_ST, net#IP_ABS_ST+net#IP_HDR_SZ, {
 }   net#IP_ABS_ST+net#IP_CKSUM)
 
-    net.set_ptr(ptr_tmp)                         ' restore pointer pos
+    net.fifo_set_wr_ptr(ptr_tmp)                         ' restore pointer pos
 
 PUB process_arp{} | opcode
 ' Process ARP message
@@ -342,7 +342,7 @@ PUB process_icmp{} | icmp_st, frm_end, icmp_end, icmpchk
 
                 { echo the data that was received in the ping/echo request }
                 net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
-                frm_end := net.fifo_wr_ptr(-2)
+                frm_end := net.fifo_wr_ptr{}
 
                 ipv4_updchksum(net.ip_hdr_len{} + net.icmp_msg_len{} + ICMP_DAT_LEN)
 
@@ -350,7 +350,7 @@ PUB process_icmp{} | icmp_st, frm_end, icmp_end, icmpchk
 
                 { update ICMP checksum }    'XXX not functional
                 icmpchk := net.inet_chksum(icmp_st, icmp_end, icmp_st+net#ICMP_CKSUM)
-                net.set_ptr(frm_end)
+                net.fifo_set_wr_ptr(frm_end)
 
                 send_frame{}
 
@@ -374,9 +374,9 @@ PUB process_ipv4{}: msg
 PUB send_frame{}
 ' Send assembled ethernet frame
     { point to assembled ethernet frame and send it }
-    net.fifo_tx_start(TXSTART)                    ' ETXSTL: TXSTART
-    net.fifo_tx_end(net.fifo_wr_ptr(-2))            ' ETXNDL: TXSTART+len
-    net.tx_enabled(true)                         ' send
+    net.fifo_set_tx_start(TXSTART)              ' ETXSTL: TXSTART
+    net.fifo_set_tx_end(net.fifo_wr_ptr{})      ' ETXNDL: TXSTART+len
+    net.tx_enabled(true)                        ' send
 
 PUB show_arp_msg(opcode)
 ' Show Wireshark-ish messages about the ARP message received
@@ -423,12 +423,12 @@ PUB show_mac_oui(ptr_premsg, ptr_addr, ptr_postmsg) | i
 
 PUB start_frame{}
 ' Reset pointers, and add control byte to frame
-    net.fifo_wr_ptr(TXSTART)
+    net.fifo_set_wr_ptr(TXSTART)
     net.wr_byte($00)                            ' per-frame control byte
 
 PUB udp_new(src_p, dest_p)
 ' Construct a UDP header
-    _udp_st := net.fifo_wr_ptr(-2)
+    _udp_st := net.fifo_wr_ptr{}
     net.reset_udp{}
     net.udp_set_src_port(src_p)
     net.udp_set_dest_port(dest_p)

@@ -1,11 +1,11 @@
 {
     --------------------------------------------
-    Filename: net.eth.enc28j60.spin
+    Filename: net.eth.enc28j60.spin2
     Author: Jesse Burt
-    Description: Driver for the ENC28J60 Ethernet Transceiver
+    Description: Driver for the ENC28J60 Ethernet Transceiver (P2 version)
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Sep 10, 2022
+    Updated Sep 11, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -96,11 +96,11 @@ PUB preset_fdx()
 
     { set up on-chip FIFO }
     fifo_ptr_auto_inc(true)
-    fifo_rd_ptr(RXSTART)
-    fifo_rx_start(RXSTART)
-    fifo_rx_rd_ptr(RXSTOP)
-    fifo_rx_end(RXSTOP)
-    fifo_tx_start(TXSTART)
+    fifo_set_rd_ptr(RXSTART)
+    fifo_set_rx_start(RXSTART)
+    fifo_set_rx_rd_ptr(RXSTOP)
+    fifo_set_rx_end(RXSTOP)
+    fifo_set_tx_start(TXSTART)
 
     mac_rx_enabled(true)      ' MACON1
     rx_flow_ctrl(true)
@@ -210,7 +210,7 @@ PUB collision_win(nr_bytes=-2): curr_nr 'XXX tentatively named
 
 PUB curr_ptr(): p
 
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr()
 
 PUB dma_ready(): flag
 ' Flag indicating DMA engine is ready
@@ -233,101 +233,93 @@ PUB fifo_ptr_auto_inc(state=-2): curr_state
             readreg(core.ECON2, 1, @curr_state)
             return (((curr_state >> core.AUTOINC) & 1) == 1)
 
-PUB fifo_rd_ptr(rxpos=-2): curr_ptr
+PUB fifo_set_rd_ptr(rxpos)
 ' Set read position within FIFO
 '   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    case rxpos
-        0..FIFO_MAX:
-            writereg(core.ERDPTL, 2, @rxpos)
-        other:
-            curr_ptr := 0
-            readreg(core.ERDPTL, 2, @curr_ptr)
-            return curr_ptr
+    rxpos := 0 #> rxpos <# FIFO_MAX
+    writereg(core.ERDPTL, 2, @rxpos)
 
-PUB fifo_rx_end(rxe=-2): curr_ptr
+PUB fifo_rd_ptr(): curr_ptr
+' Get current read position within FIFO
+    curr_ptr := 0
+    readreg(core.ERDPTL, 2, @curr_ptr)
+
+PUB fifo_set_rx_end(rxe)
 ' Set ending position within FIFO for RX region
 '   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    case rxe
-        0..FIFO_MAX:
-            writereg(core.ERXNDL, 2, @rxe)
-        other:
-            curr_ptr := 0
-            readreg(core.ERXNDL, 2, @curr_ptr)
-            return curr_ptr
+    rxe := 0 #> rxe <# FIFO_MAX
+    writereg(core.ERXNDL, 2, @rxe)
 
-PUB fifo_rx_rd_ptr(rxrd=-2): curr_rdpos
-' Set receive read pointer XXX clarify
-'   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    case rxrd
-        0..FIFO_MAX:
-            writereg(core.ERXRDPTL, 2, @rxrd)
-        other:
-            curr_rdpos := 0
-            readreg(core.ERXRDPTL, 2, @curr_rdpos)
-            return curr_rdpos
+PUB fifo_rx_end(): r_end
+' Get end of receive region within FIFO
+    r_end := 0
+    readreg(core.ERXNDL, 2, @r_end)
 
-PUB fifo_rx_wr_ptr(rxwr=-2): curr_wrpos
-' Set receive write pointer XXX clarify
+PUB fifo_set_rx_rd_ptr(rxrd)
+' Set read pointer within receive region of FIFO
 '   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    case rxwr
-        0..FIFO_MAX:
-            writereg(core.ERXWRPTL, 2, @rxwr)
-        other:
-            curr_wrpos := 0
-            readreg(core.ERXWRPTL, 2, @curr_wrpos)
-            return curr_wrpos
+    rxrd := 0 #> rxrd <# FIFO_MAX
+    writereg(core.ERXRDPTL, 2, @rxrd)
 
-PUB fifo_rx_start(rxs=-2): curr_ptr
-' Set starting position within FIFO for RX region
-'   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    case rxs
-        0..FIFO_MAX:
-            writereg(core.ERXSTL, 2, @rxs)
-        other:
-            curr_ptr := 0
-            readreg(core.ERXSTL, 2, @curr_ptr)
-            return curr_ptr
+PUB fifo_rx_rd_ptr(): curr_ptr
+' Get current read pointer within receive region of FIFO
+    curr_ptr := 0
+    readreg(core.ERXRDPTL, 2, @curr_ptr)
 
-PUB fifo_tx_end(ptr=-2): curr_ptr
-' Set starting position within FIFO for TX region
+PUB fifo_set_rx_wr_ptr(rxwr)
+' Set pointer in FIFO where received data will be written
 '   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    case ptr
-        0..FIFO_MAX:
-            writereg(core.ETXNDL, 2, @ptr)
-        other:
-            curr_ptr := 0
-            readreg(core.ETXNDL, 2, @curr_ptr)
-            return curr_ptr
+    rxwr := 0 #> rxwr <# FIFO_MAX
+    writereg(core.ERXWRPTL, 2, @rxwr)
 
-PUB fifo_tx_start(ptr=-2): curr_ptr
-' Set starting position within FIFO for TX region
-'   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    case ptr
-        0..FIFO_MAX:
-            writereg(core.ETXSTL, 2, @ptr)
-        other:
-            curr_ptr := 0
-            readreg(core.ETXSTL, 2, @curr_ptr)
-            return curr_ptr
+PUB fifo_rx_wr_ptr(): curr_ptr
+' Get current write pointer within receive region of FIFO
+    curr_ptr := 0
+    readreg(core.ERXWRPTL, 2, @curr_ptr)
 
-PUB fifo_wr_ptr(ptr=-2): curr_ptr
-' Set write position within FIFO
+PUB fifo_set_rx_start(rxs=-2): curr_ptr
+' Set start of receive region within FIFO
 '   Valid values: 0..8191
-'   Any other value polls the chip and returns the current setting
-    case ptr
-        0..FIFO_MAX:
-            writereg(core.EWRPTL, 2, @ptr)
-        other:
-            curr_ptr := 0
-            readreg(core.EWRPTL, 2, @curr_ptr)
-            return curr_ptr
+    rxs := 0 #> rxs <# FIFO_MAX
+    writereg(core.ERXSTL, 2, @rxs)
+
+PUB fifo_rx_start(): r_st
+' Get start of receive region within FIFO
+    r_st := 0
+    readreg(core.ERXSTL, 2, @r_st)
+
+PUB fifo_set_tx_end(txe)
+' Set end of transmit region within FIFO
+'   Valid values: 0..8191
+    txe := 0 #> txe <# FIFO_MAX
+    writereg(core.ETXNDL, 2, @txe)
+
+PUB fifo_tx_end(): t_end
+' Get end of transmit region within FIFO
+    t_end := 0
+    readreg(core.ETXNDL, 2, @t_end)
+
+PUB fifo_set_tx_start(txs)
+' Set start of transmit region within FIFO
+'   Valid values: 0..8191
+    txs := 0 #> txs <# FIFO_MAX
+    writereg(core.ETXSTL, 2, @txs)
+
+PUB fifo_tx_start(): txs
+' Get start of transmit region within FIFO
+    txs := 0
+    readreg(core.ETXSTL, 2, @txs)
+
+PUB fifo_set_wr_ptr(ptr)
+' Set write pointer within FIFO
+'   Valid values: 0..8191
+    ptr := 0 #> ptr <# FIFO_MAX
+    writereg(core.EWRPTL, 2, @ptr)
+
+PUB fifo_wr_ptr(): curr_ptr
+' Get current write pointer within FIFO
+    curr_ptr := 0
+    readreg(core.EWRPTL, 2, @curr_ptr)
 
 PUB frame_len_check(state=-2): curr_state    'XXX tentatively named
 ' Enable frame length checking
@@ -435,7 +427,7 @@ PUB inet_chksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
     chk := 0
     readreg(core.EDMACSL, 2, @chk)
 
-    fifo_wr_ptr(ck_end)
+    fifo_set_wr_ptr(ck_end)
 
     wrword_msbf(chk)
 
@@ -891,10 +883,6 @@ PUB rx_payload(ptr_buff, nr_bytes)
             spi.rdblock_lsbf(ptr_buff, nr_bytes)
             pinh(_CS)
 
-PUB set_ptr(p)
-
-    fifo_wr_ptr(p)
-
 PUB tx_defer(state): curr_state  'XXX tentatively named
 ' Defer transmission
 '   Valid values:
@@ -1039,23 +1027,15 @@ PUB wrword_msbf(w): len
     pinh(_CS)
     return 2
 
-PRI bank_sel(bank_nr): curr_bank
+PRI bank_sel(bank_nr)
 ' Select register bank
 '   Valid values: 0..3
-'   Any other value polls the chip and returns the current setting
     if (bank_nr == _curr_bank)                  ' leave the bank set as-is if
         return                                  ' it matches the last setting
 
-    case bank_nr
-        0..3:
-            regbits_clr(core.ECON1, core.BSEL_BITS)
-            regbits_set(core.ECON1, bank_nr)
-            _curr_bank := bank_nr
-        other:
-            curr_bank := 0
-            readreg(core.ECON1, 1, @curr_bank)
-            _curr_bank := (curr_bank & core.BSEL_BITS)
-            return (curr_bank & core.BSEL_BITS)
+    regbits_clr(core.ECON1, core.BSEL_BITS)
+    regbits_set(core.ECON1, 0 #> bank_nr <# 3)
+    _curr_bank := bank_nr
 
 PRI cmd(cmd_nr)
 ' Send simple command
