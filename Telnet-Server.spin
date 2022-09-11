@@ -5,7 +5,7 @@
     Description: WIP Telnet server, for testing TCP
     Copyright (c) 2022
     Started Apr 16, 2022
-    Updated Apr 19, 2022
+    Updated Sep 11, 2022
     See end of file for terms of use.
    --------------------------------------------
 
@@ -27,7 +27,7 @@ CON
     CLOSE_WAIT      = 3
     LAST_ACK        = 4
 
-PRI Process_TCP{} | isn, hdr_len, paylen_rx
+PRI process_tcp{} | isn, hdr_len, paylen_rx
 ' Process TCP datagrams
     net.rd_tcp_header{}
     net.rd_tcp_opts{}
@@ -40,50 +40,50 @@ PRI Process_TCP{} | isn, hdr_len, paylen_rx
         _tcp_state := LISTEN
         return
 
-    { if this node is bound to an IP, the TCP message was directed to it, }
-    {   and we're listening on the port, set up a connection }
-    if ( (_dhcp_state => BOUND) and (net.ip_destaddr{} == _my_ip) and {
-}   lookdown(net.tcp_destport{}: svc#TELNET) )
+    { if this node is bound to an IP, and the TCP message was directed to it, }
+    {   and we're listening on the port, then set up a connection }
+    if ( (_dhcp_state => BOUND) and (net.ip_dest_addr{} == _my_ip) and {
+}   lookdown(net.tcp_dest_port{}: svc#TELNET) )
         case _tcp_state
             LISTEN:
                 ser.strln(@"[LISTEN]")
                 if (net.tcp_flags{} == net#SYN_BIT)
-                    net.tcp_swapseqnrs{}
-                    net.tcp_setseqnr(math.rndi(posx))
-                    net.tcp_incacknr(1)
+                    net.tcp_swap_seq_nrs{}
+                    net.tcp_set_seq_nr(math.rndi(posx))
+                    net.tcp_inc_ack_nr(1)
                     tcp_send(net#SYN_BIT | net#ACK_BIT, 0, 0)
                     _tcp_state := SYN_RECEIVED
             SYN_RECEIVED:
-                showipaddr(@"[SYN_RECEIVED] ", net.ip_srcaddr{}, string(10, 13))
+                show_ip_addr(@"[SYN_RECEIVED] ", net.ip_src_addr{}, string(10, 13))
                 if (net.tcp_flags{} == net#ACK_BIT)
                     _tcp_state := ESTABLISHED
             ESTABLISHED:
-                showipaddr(@"[ESTABLISHED] ", net.ip_srcaddr{}, string(10, 13))
+                show_ip_addr(@"[ESTABLISHED] ", net.ip_src_addr{}, string(10, 13))
                 if ((net.tcp_flags{} & net#PSH_BIT) or (net.tcp_flags{} == net#ACK_BIT))
-                    hdr_len := net.ip_hdrlen{}+net.tcp_hdrlenbytes{}
-                    paylen_rx := net.ip_dgramlen{}-hdr_len
+                    hdr_len := net.ip_hdr_len{}+net.tcp_hdr_len_bytes{}
+                    paylen_rx := net.ip_dgram_len{}-hdr_len
                     { if there's a payload attached to this segment, }
                     {   show a hexdump of it; skip over the ethernet-II header, }
                     {   the IP header, and the TCP header + options }
                     if (paylen_rx > 0)
                         ser.hexdump(@_buff+net#ETH_FRM_SZ+hdr_len, 0, 4, paylen_rx, (16 <# paylen_rx) )
-                    net.tcp_swapseqnrs{}
-                    net.tcp_incacknr(paylen_rx)
+                    net.tcp_swap_seq_nrs{}
+                    net.tcp_inc_ack_nr(paylen_rx)
                     tcp_send(net#ACK_BIT, 0, 0)
                 if (net.tcp_flags{} == (net#FIN_BIT | net#ACK_BIT))
                     _tcp_state := CLOSE_WAIT
             CLOSE_WAIT:
-                showipaddr(@"[CLOSE_WAIT] ", net.ip_srcaddr{}, string(10, 13))
-                net.tcp_swapseqnrs{}
-                net.tcp_incacknr(1)
+                show_ip_addr(@"[CLOSE_WAIT] ", net.ip_src_addr{}, string(10, 13))
+                net.tcp_swap_seq_nrs{}
+                net.tcp_inc_ack_nr(1)
                 tcp_send(net#FIN_BIT | net#ACK_BIT, 0, 0)
                 _tcp_state := LAST_ACK
             LAST_ACK:
-                showipaddr(@"[LAST_ACK] ", net.ip_srcaddr{}, string(10, 13))
+                show_ip_addr(@"[LAST_ACK] ", net.ip_src_addr{}, string(10, 13))
                 if (net.tcp_flags{} & net#ACK_BIT)
                     _tcp_state := LISTEN'CLOSED
 
-PRI ShowTCP_Flags(flags) | i
+PRI show_tcp_flags(flags) | i
 ' Display the TCP header's flag bits as symbols
     ser.str(@": [")
     repeat i from 8 to 0
@@ -96,72 +96,72 @@ PRI ShowTCP_Flags(flags) | i
     ser.fgcolor(ser#GREY)
     ser.char("]")
 
-PRI TCP_Send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
+PRI tcp_send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tcpchk, tmp
 
     { before doing anything, check that the segment fits within the max MTU }
     if ((data_len + net#ETH_FRM_SZ + net#IP_HDR_SZ + net#TCP_HDR_SZ) > MTU_MAX)
         return -1                               ' frame too big; ignore
 
-    startframe{}
+    start_frame{}
     ethii_reply
     ipv4_reply{}
-    tcp_st := net.currptr{}
+    tcp_st := net.fifo_wr_ptr(-2)
 
     { swap source/dest ports so as to "reply" }
-    net.tcp_swapports{}
+    net.tcp_swap_ports{}
 
-    net.tcp_setflags(flags)
+    net.tcp_set_flags(flags)
 
-    net.tcp_setchksum(0)                        ' init chksum field to 0 for real chksum calc
-    net.tcp_sethdrlen(0)                        ' same with header length (no TCP opts yet)
-    net.tcp_seturgentptr(0)
+    net.tcp_set_chksum(0)                        ' init chksum field to 0 for real chksum calc
+    net.tcp_set_hdr_len(0)                        ' same with header length (no TCP opts yet)
+    net.tcp_set_urgent_ptr(0)
     net.wr_tcp_header{}
-    frm_end := net.currptr{}                    ' update frame end: add TCP header
+    frm_end := net.fifo_wr_ptr(-2)                    ' update frame end: add TCP header
 
     { write TCP options, as necessary }
     if (flags & net#SYN_BIT)
-        net.writeklv(net#MSS, 4, true, net.tcp_mss{}, net#MSBF)
-        net.writeklv(net#TMSTAMPS, 10, true, net.tcp_timest_ptr{}, net#MSBF)
-        net.writeklv(net#WIN_SCALE, 3, true, 10, 0)
-        net.writeklv(net#NOOP, 0, false, 0, 0)
-        net.writeklv(net#NOOP, 0, false, 0, 0)
-        net.writeklv(net#NOOP, 0, false, 0, 0)
-        net.writeklv(net#NOOP, 0, false, 0, 0)
+        net.write_klv(net#MSS, 4, true, net.tcp_mss{}, net#MSBF)
+        net.write_klv(net#TMSTAMPS, 10, true, net.tcp_timest_ptr{}, net#MSBF)
+        net.write_klv(net#WIN_SCALE, 3, true, 10, 0)
+        net.write_klv(net#NOOP, 0, false, 0, 0)
+        net.write_klv(net#NOOP, 0, false, 0, 0)
+        net.write_klv(net#NOOP, 0, false, 0, 0)
+        net.write_klv(net#NOOP, 0, false, 0, 0)
     elseif (flags & net#ACK_BIT)
-        net.writeklv(net#NOOP, 0, false, 0, 0)
-        net.writeklv(net#NOOP, 0, false, 0, 0)
-        net.writeklv(net#TMSTAMPS, 10, true, net.tcp_timest_ptr{}, net#MSBF)
-    net.tcp_sethdrlenbytes(net#TCP_HDR_SZ + (net.currptr{} - frm_end))  ' hdr len = TCP hdr + opts len
-    frm_end := net.currptr{}                    ' update frame end: add TCP options
+        net.write_klv(net#NOOP, 0, false, 0, 0)
+        net.write_klv(net#NOOP, 0, false, 0, 0)
+        net.write_klv(net#TMSTAMPS, 10, true, net.tcp_timest_ptr{}, net#MSBF)
+    net.tcp_set_hdr_len_bytes(net#TCP_HDR_SZ + (net.fifo_wr_ptr(-2) - frm_end))  ' hdr len = TCP hdr + opts len
+    frm_end := net.fifo_wr_ptr(-2)                    ' update frame end: add TCP options
 
-    net.setptr(tcp_st + net#TCPH_HDRLEN)
-    net.wr_byte(net.tcp_hdrlen{} | ((net.tcp_flags{} >> net#NONCE) & 1) )
-    net.setptr(frm_end)
+    net.set_ptr(tcp_st + net#TCPH_HDRLEN)
+    net.wr_byte(net.tcp_hdr_len{} | ((net.tcp_flags{} >> net#NONCE) & 1) )
+    net.set_ptr(frm_end)
 
-    ipv4_updchksum(net.ip_hdrlen{} + net.tcp_hdrlenbytes{} + data_len)
+    ipv4_updchksum(net.ip_hdr_len{} + net.tcp_hdr_len_bytes{} + data_len)
 
     { update TCP header with checksum }
-    _tcp_ph_src := net.ip_srcaddr{}
-    _tcp_ph_dest := net.ip_destaddr{}
-    _tcp_ph_proto := net.ip_l4proto{}
+    _tcp_ph_src := net.ip_src_addr{}
+    _tcp_ph_dest := net.ip_dest_addr{}
+    _tcp_ph_proto := net.ip_l4_proto{}
 
-    tmp := net.tcp_hdrlenbytes{}             'XXX got to be a better way...
+    tmp := net.tcp_hdr_len_bytes{}             'XXX got to be a better way...
     _tcp_ph_len.byte[1] := tmp.byte[0]  '
 '    ser.hexdump(@_tcp_ph_src, 0, 4, 12, 12) ' inspect pseudo-header
 
     { calc checksum of TCP/IP pseudo header, then the TCP header }
     pseudo_chk := crc.inetchksum(@_tcp_ph_src, 12, $00)
-    tcpchk := crc.inetchksum(@_buff[tcp_st], net.tcp_hdrlenbytes{}, pseudo_chk)
-    net.setptr(tcp_st+net#TCPH_CKSUM)
+    tcpchk := crc.inetchksum(@_buff[tcp_st], net.tcp_hdr_len_bytes{}, pseudo_chk)
+    net.set_ptr(tcp_st+net#TCPH_CKSUM)
     net.wrword_msbf(tcpchk)
-    net.setptr(frm_end)
+    net.set_ptr(frm_end)
 
     { if there's a payload, tack it on the end }
     if (data_len > 0)
         net.wrblk_lsbf(ptr_data, data_len)
 
-    eth.txpayload(@_buff, net.currptr{})
-    sendframe{}
+    eth.tx_payload(@_buff, net.fifo_wr_ptr(-2))
+    send_frame{}
 
 DAT
     ' XXX var?
@@ -186,22 +186,21 @@ DAT
 
 DAT
 {
-    --------------------------------------------------------------------------------------------------------
-    TERMS OF USE: MIT License
+Copyright 2022 Jesse Burt
 
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-    associated documentation files (the "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-    following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-    The above copyright notice and this permission notice shall be included in all copies or substantial
-    portions of the Software.
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-    --------------------------------------------------------------------------------------------------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
+

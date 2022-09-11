@@ -10,12 +10,12 @@
         * assembles frames directly on the chip
     Copyright (c) 2022
     Started Sep 10, 2022
-    Updated Sep 10, 2022
+    Updated Sep 11, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
 #include "net-common.spinh"
-#include "core.con.click.spin2"
+#include "core.con.click.spin2"                 ' comment out if not using a click board
 
 CON
 
@@ -107,13 +107,13 @@ PUB main() | rn
 
     setup()
 
-    net.pktfilter(0)
+    net.pkt_filter(0)
     net.preset_fdx()
 
-    net.nodeaddress(@_mac_local)
+    net.node_address(@_mac_local)
 
     ser.str(@"waiting for PHY link...")
-    repeat until net.phylinkstate() == net.UP
+    repeat until net.phy_link_state() == net.UP
     ser.strln(@"link UP")
 
     _dly := 4
@@ -122,14 +122,14 @@ PUB main() | rn
     repeat
         case _dhcp_state
             INIT:
-                net.bootp_setxid(math.rndi(posx) & $7fff_fff0)
+                net.bootp_set_xid(math.rndi(posx) & $7fff_fff0)
                 _dhcp_state++
             SELECTING:
                 dhcp_msg(net.DHCPDISCOVER)
                 rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
                 _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
-                    if (net.pktcnt())           ' pkt received?
+                    if (net.pkt_cnt())           ' pkt received?
                         get_frame()
                         if (process_ethii() == net.DHCPOFFER)
                             { offer received from DHCP server; request it }
@@ -150,7 +150,7 @@ PUB main() | rn
                 rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
                 _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
-                    if (net.pktcnt())
+                    if (net.pkt_cnt())
                         get_frame()
                         if (process_ethii() == net.DHCPACK)
                             { server acknowledged request; we're now bound
@@ -163,19 +163,19 @@ PUB main() | rn
                         _dly *= 2
             BOUND:
                 if (_my_ip == 0)
-                    _my_ip := net.bootp_yourip()
+                    _my_ip := net.bootp_your_ip()
                     ser.fgcolor(ser.LTGREEN)
                     show_ip_addr(@"IP: ", _my_ip, 0)
                     ser.fgcolor(ser.GREY)
                     ser.newline()
                     { set a timer for the lease expiry }
-                    _timer_set := net.dhcp_ipleasetime()
+                    _timer_set := net.dhcp_ip_lease_time()
                 ifnot (_timer_set)
                     { when the lease timer expires, reset everything back
                         to the initial state and try to get a new lease }
                     _my_ip := 0
                     _dhcp_state := INIT
-                if (net.pktcnt())
+                if (net.pkt_cnt())
                     { if any frames are received, process them; they might be
                         the server sending ARP requests confirming we're
                         bound to the IP }
@@ -187,12 +187,12 @@ PUB arp_reply()
     start_frame()
     ethii_reply()
     { change only the settings that differ from the request }
-    net.arp_setopcode(net.ARP_REPL)
-    net.arp_settargethwaddr(net.arp_senderhwaddr())
-    net.arp_settargetprotoaddr(net.arp_senderprotoaddr())
-    net.arp_setsenderprotoaddr(_my_ip)
+    net.arp_set_opcode(net.ARP_REPL)
+    net.arp_set_target_hw_addr(net.arp_sender_hw_addr())
+    net.arp_set_target_proto_addr(net.arp_sender_proto_addr())
+    net.arp_set_sender_proto_addr(_my_ip)
     { /\- is at -\/ }
-    net.arp_setsenderhwaddr(@_mac_local)
+    net.arp_set_sender_hw_addr(@_mac_local)
 
     net.wr_arp_msg()
     send_frame()
@@ -206,44 +206,44 @@ PUB dhcp_msg(msg_t) | tmp
     ipv4_new(net.UDP, $00_00_00_00, BCAST_IP)
     udp_new(svc.BOOTP_C, svc.BOOTP_S)
 
-    net.bootp_setopcode(net.BOOT_REQ)
-    net.bootp_setbcastflag(true)
-    net.bootp_setclientmac(@_mac_local)
-    net.dhcp_setparamsreqd(@_dhcp_params, 5)
-    net.dhcp_setmaxmsglen(MTU_MAX)
-    net.dhcp_setipleasetime(120)                ' 2min
-    net.dhcp_setmsgtype(msg_t)
+    net.bootp_set_opcode(net.BOOT_REQ)
+    net.bootp_set_bcast_flag(true)
+    net.bootp_set_client_mac(@_mac_local)
+    net.dhcp_set_params_reqd(@_dhcp_params, 5)
+    net.dhcp_set_max_msg_len(MTU_MAX)
+    net.dhcp_set_ip_lease_time(120)                ' 2min
+    net.dhcp_set_msg_type(msg_t)
     net.wr_dhcp_msg()
 
     { update UDP header with length: UDP header + DHCP message }
-    tmp := net.fifowrptr(-2)
-    net.setptr(_udp_st+net.UDP_DGRAM_LEN)
-    net.wrword_msbf(net.udp_hdrlen() + net.dhcp_msglen())
-    net.setptr(tmp)
+    tmp := net.fifo_wr_ptr(-2)
+    net.set_ptr(_udp_st+net.UDP_DGRAMLEN)
+    net.wrword_msbf(net.udp_hdr_len() + net.dhcp_msg_len())
+    net.set_ptr(tmp)
 
     { update IP header with length and checksum }
-    ipv4_updchksum(net.ip_hdrlen() + net.udp_hdrlen() + net.dhcp_msglen())
+    ipv4_updchksum(net.ip_hdr_len() + net.udp_hdr_len() + net.dhcp_msg_len())
     send_frame()
 
 PUB ethii_new(mac_src, mac_dest, ether_t)
 ' Start new ethernet-II frame
-    net.ethii_setdestaddr(mac_dest)
-    net.ethii_setsrcaddr(mac_src)
-    net.ethii_setethertype(ether_t)
+    net.ethii_set_dest_addr(mac_dest)
+    net.ethii_set_src_addr(mac_src)
+    net.ethii_set_ethertype(ether_t)
     net.wr_ethii_frame()
 
 PUB ethii_reply(): pos
 ' Set up/write Ethernet II frame as a reply to last received frame
-    net.ethii_setdestaddr(net.ethii_srcaddr())
-    net.ethii_setsrcaddr(@_mac_local)
+    net.ethii_set_dest_addr(net.ethii_src_addr())
+    net.ethii_set_src_addr(@_mac_local)
     net.wr_ethii_frame()
-    return net.fifowrptr(-2)
+    return net.fifo_wr_ptr(-2)
 
 PUB get_frame() | rdptr
 ' Receive frame from ethernet device
     { get receive status vector }
-    net.fifordptr(_nxtpkt)
-    net.rxpayload(@_nxtpkt, 6)
+    net.fifo_rd_ptr(_nxtpkt)
+    net.rx_payload(@_nxtpkt, 6)
 
     { reject oversized packets }
     ifnot (_rxlen <= MTU_MAX)
@@ -255,56 +255,58 @@ PUB get_frame() | rdptr
     if ((rdptr < RXSTART) or (rdptr > RXSTOP))
         rdptr := RXSTOP
 
-    net.pktdec()
+    net.pkt_dec()
 
-    net.fiforxrdptr(rdptr)
+    net.fifo_rx_rd_ptr(rdptr)
 
 PUB ipv4_new(l4_proto, src_ip, dest_ip)
 ' Construct an IPV4 header
 '   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
-    _ip_st := net.fifowrptr(-2)                     ' mark start of IPV4 data
+    _ip_st := net.fifo_wr_ptr(-2)                     ' mark start of IPV4 data
     net.reset_ipv4()
-    net.ip_setl4proto(l4_proto)
-    net.ip_setsrcaddr(src_ip)
-    net.ip_setdestaddr(dest_ip)
+    net.ip_set_l4_proto(l4_proto)
+    net.ip_set_src_addr(src_ip)
+    net.ip_set_dest_addr(dest_ip)
     net.wr_ip_header()
 
 PUB ipv4_reply(): pos
 ' Set up/write IPv4 header as a reply to last received header
-    net.ip_sethdrchk(0)                         ' init header checksum to 0
-    ipv4_new(net.ip_l4proto(), _my_ip, net.ip_srcaddr())
-    return net.fifowrptr(-2)
+    net.ip_set_hdr_chk(0)                         ' init header checksum to 0
+    ipv4_new(net.ip_l4_proto(), _my_ip, net.ip_src_addr())
+    return net.fifo_wr_ptr(-2)
 
 PUB ipv4_updchksum(length) | ptr_tmp
 ' Update IP header with checksum
-    ptr_tmp := net.fifowrptr(-2)                ' cache current pointer
+    ptr_tmp := net.fifo_wr_ptr(-2)                ' cache current pointer
 
     { update IP header with specified length and calculate checksum }
-    net.ip_setdgramlen(length)
-    net.setptr(_ip_st + net.IP_TLEN)
-    net.wrword_msbf(net.ip_dgramlen())
-    net.inetchksum(net.IP_ABS_ST, net.IP_ABS_ST+net.IP_HDR_SZ, {
+    net.ip_set_dgram_len(length)
+    net.set_ptr(_ip_st + net.IP_TLEN)
+    net.wrword_msbf(net.ip_dgram_len())
+    net.inet_chksum(net.IP_ABS_ST, net.IP_ABS_ST+net.IP_HDR_SZ, {
 }   net.IP_ABS_ST+net.IP_CKSUM)
 
-    net.setptr(ptr_tmp)                         ' restore pointer pos
+    net.set_ptr(ptr_tmp)                         ' restore pointer pos
 
 PUB process_arp() | opcode
 ' Process ARP message
     net.rd_arp_msg()
+    show_arp_msg(net.arp_opcode())
     if (net.arp_opcode() == net.ARP_REQ)
         { if we're currently bound to an IP, and the ARP request is for
             our IP, send a reply confirming we have it }
-        if ( (_dhcp_state >= BOUND) and (net.arp_targetprotoaddr() == _my_ip) )
+        if ( (_dhcp_state >= BOUND) and (net.arp_target_proto_addr() == _my_ip) )
             arp_reply()
+            show_arp_msg(net.arp_opcode())
 
 PUB process_bootp()
 ' Process BOOTP/DHCP message
     net.rd_bootp_msg()
     { BOOTP reply? }
     if (net.bootp_opcode() == net.BOOT_REPL)
-        if (net.dhcp_msgtype() == net.DHCPOFFER)
+        if (net.dhcp_msg_type() == net.DHCPOFFER)
             return net.DHCPOFFER
-        if (net.dhcp_msgtype() == net.DHCPACK)
+        if (net.dhcp_msg_type() == net.DHCPACK)
             return net.DHCPACK
 
 PUB process_ethii(): msg_t | ether_t
@@ -324,43 +326,46 @@ PUB process_icmp() | icmp_st, frm_end, icmp_end, icmpchk
     { if this node is bound to an IP and the echo request was directed to it, }
     {   send a reply }
     net.rd_icmp_msg()
-    case net.icmp_msgtype()
+    case net.icmp_msg_type()
         net.ECHO_REQ:
         { ECHO request (ping) }
             net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
-            if ( (_dhcp_state >= BOUND) and (net.ip_destaddr() == _my_ip) )
+            if ( (_dhcp_state >= BOUND) and (net.ip_dest_addr() == _my_ip) )
+                ser.fgcolor(ser.GREEN)
+                ser.strln(@"PING!")
+                ser.fgcolor(ser.GREY)
                 start_frame()
                 ethii_reply()
                 icmp_st := ipv4_reply()
 
-                net.icmp_setchksum(0)
-                net.icmp_setmsgtype(net.ECHO_REPL)
-                net.icmp_setseqnr(net.icmp_seqnr())
+                net.icmp_set_chksum(0)
+                net.icmp_set_msg_type(net.ECHO_REPL)
+                net.icmp_set_seq_nr(net.icmp_seq_nr())
                 net.wr_icmp_msg()
 
                 { echo the data that was received in the ping/echo request }
                 net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
-                frm_end := net.fifowrptr(-2)
+                frm_end := net.fifo_wr_ptr(-2)
 
-                ipv4_updchksum(net.ip_hdrlen() + net.icmp_msglen() + ICMP_DAT_LEN)
+                ipv4_updchksum(net.ip_hdr_len() + net.icmp_msg_len() + ICMP_DAT_LEN)
 
-                icmp_end := icmp_st + net.icmp_msglen + ICMP_DAT_LEN
+                icmp_end := icmp_st + net.icmp_msg_len + ICMP_DAT_LEN
 
                 { update ICMP checksum }    'XXX not functional
-                icmpchk := net.inetchksum(icmp_st, icmp_end, icmp_st+net.ICMP_CKSUM)
-                net.setptr(frm_end)
+                icmpchk := net.inet_chksum(icmp_st, icmp_end, icmp_st+net.ICMP_CKSUM)
+                net.set_ptr(frm_end)
 
                 send_frame()
 
 PUB process_ipv4(): msg
 ' Process IPv4 datagrams
     net.rd_ip_header()
-    case net.ip_l4proto()
+    case net.ip_l4_proto()
         { UDP? }
         net.UDP:
             net.rd_udp_header()
             { BOOTP? }
-            if (net.udp_destport() == svc.BOOTP_C)
+            if (net.udp_dest_port() == svc.BOOTP_C)
                 msg := process_bootp()
         net.TCP:
 #ifdef TCP_TEL
@@ -372,19 +377,19 @@ PUB process_ipv4(): msg
 PUB send_frame()
 ' Send assembled ethernet frame
     { point to assembled ethernet frame and send it }
-    net.fifotxstart(TXSTART)                    ' ETXSTL: TXSTART
-    net.fifotxend(net.fifowrptr(-2))            ' ETXNDL: TXSTART+len
-    net.txenabled(true)                         ' send
+    net.fifo_tx_start(TXSTART)                    ' ETXSTL: TXSTART
+    net.fifo_tx_end(net.fifo_wr_ptr(-2))            ' ETXNDL: TXSTART+len
+    net.tx_enabled(true)                         ' send
 
 PUB show_arp_msg(opcode)
 ' Show Wireshark-ish messages about the ARP message received
     case opcode
         net.ARP_REQ:
-            show_ip_addr(@"[Who has ", net.arp_targetprotoaddr(), @"? Tell ")
-            show_ip_addr(0, net.arp_senderprotoaddr(), string("]", 10, 13))
+            show_ip_addr(@"[Who has ", net.arp_target_proto_addr(), @"? Tell ")
+            show_ip_addr(0, net.arp_sender_proto_addr(), string("]", 10, 13))
         net.ARP_REPL:
-            show_ip_addr(@"[", net.arp_senderprotoaddr(), @" is at ")
-            show_mac_addr(0, net.arp_senderhwaddr(), string("]", 10, 13))
+            show_ip_addr(@"[", net.arp_sender_proto_addr(), @" is at ")
+            show_mac_addr(0, net.arp_sender_hw_addr(), string("]", 10, 13))
 
 PUB show_ip_addr(ptr_premsg, addr, ptr_postmsg) | i
 ' Display IP address, with optional prefixed/postfixed strings (pass 0 to ignore)
@@ -402,18 +407,18 @@ PUB show_mac_addr(ptr_premsg, ptr_addr, ptr_postmsg) | i
     if (ptr_premsg)
         ser.str(ptr_premsg)
     repeat i from 0 to 5
-        ser.hex(byte[ptr_addr][i], 2)
+        ser.hexs(byte[ptr_addr][i], 2)
         if (i < 5)
             ser.char(":")
     if (ptr_postmsg)
         ser.str(ptr_postmsg)
 
 PUB show_mac_oui(ptr_premsg, ptr_addr, ptr_postmsg) | i
-' Display OUI of MAC address, with optional preceding string (pass 0 to ignore)
+' Display OUI of MAC address, with optional prefixed/postfixed strings (pass 0 to ignore)
     if (ptr_premsg)
         ser.str(ptr_premsg)
     repeat i from 0 to 2
-        ser.hex(byte[ptr_addr][i], 2)
+        ser.hexs(byte[ptr_addr][i], 2)
         if (i < 2)
             ser.char(":")
     if (ptr_postmsg)
@@ -421,15 +426,15 @@ PUB show_mac_oui(ptr_premsg, ptr_addr, ptr_postmsg) | i
 
 PUB start_frame()
 ' Reset pointers, and add control byte to frame
-    net.fifowrptr(TXSTART)
+    net.fifo_wr_ptr(TXSTART)
     net.wr_byte($00)                            ' per-frame control byte
 
 PUB udp_new(src_p, dest_p)
 ' Construct a UDP header
-    _udp_st := net.fifowrptr(-2)
+    _udp_st := net.fifo_wr_ptr(-2)
     net.reset_udp()
-    net.udp_setsrcport(src_p)
-    net.udp_setdestport(dest_p)
+    net.udp_set_src_port(src_p)
+    net.udp_set_dest_port(dest_p)
     net.wr_udp_header()
 
 PRI cog_timer()

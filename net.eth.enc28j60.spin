@@ -51,10 +51,10 @@ OBJ
     core: "core.con.enc28j60"                   ' hw-specific constants
     time: "time"                                ' Basic timing functions
 
-PUB Null{}
+PUB null{}
 ' This is not a top-level object
 
-PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
+PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
 ' Start using custom IO pins
     if lookdown(CS_PIN: 0..31) and lookdown(SCK_PIN: 0..31) and {
 }   lookdown(MOSI_PIN: 0..31) and lookdown(MISO_PIN: 0..31)
@@ -65,8 +65,8 @@ PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
             dira[_CS] := 1
             _curr_bank := -1                    ' establish initial bank
 
-            repeat until clkready{}
-            reset
+            repeat until clk_ready{}
+            reset{}
             time.msleep(30)
             return
     ' if this point is reached, something above failed
@@ -74,11 +74,12 @@ PUB Startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
     ' Lastly - make sure you have at least one free core/cog
     return FALSE
 
-PUB Stop{}
-
+PUB stop{}
+' Stop the driver
     spi.deinit{}
+    _CS := _curr_bank := 0
 
-PUB Defaults{}
+PUB defaults{}
 ' Set factory defaults
 
 CON
@@ -89,50 +90,50 @@ CON
     TXSTART         = 8192 - (TX_BUFFER_SIZE + 8)       '6666
     TXEND           = TXSTART + (TX_BUFFER_SIZE + 8)    '8192 (xxx - shouldn't this be 8191?)
 
-PUB Preset_FDX
+PUB preset_fdx{}
 ' Preset settings; full-duplex
-    rxenabled(false)
-    txenabled(false)
+    rx_enabled(false)
+    tx_enabled(false)
 
     { set up on-chip FIFO }
-    fifoptrautoinc(true)
-    fifordptr(RXSTART)
-    fiforxstart(RXSTART)
-    fiforxrdptr(RXSTOP)
-    fiforxend(RXSTOP)
-    fifotxstart(TXSTART)
+    fifo_ptr_auto_inc(true)
+    fifo_rd_ptr(RXSTART)
+    fifo_rx_start(RXSTART)
+    fifo_rx_rd_ptr(RXSTOP)
+    fifo_rx_end(RXSTOP)
+    fifo_tx_start(TXSTART)
 
-    macrxenabled(true)      ' MACON1
-    rxflowctrl(true)
-    txflowctrl(true)
+    mac_rx_enabled(true)      ' MACON1
+    rx_flow_ctrl(true)
+    tx_flow_ctrl(true)
 
-    framelencheck(true)     ' MACON3
-    framepadding(PAD60)
+    frame_len_check(true)     ' MACON3
+    frame_padding(PAD60)
 
-    txdefer(true)           ' MACON4
+    tx_defer(true)           ' MACON4
 
-    collisionwin(63)        ' MACLCON2
+    collision_win(63)        ' MACLCON2
 
-    interpktgap(18)         ' MAIPGL $12
-    interpktgaphdx(12)      ' MAIPGH $0c
+    inter_pkt_gap(18)         ' MAIPGL $12
+    inter_pkt_gap_hdx(12)      ' MAIPGH $0c
 
-    maxframelen(1518)       ' MAMXFLL
+    max_frame_len(1518)       ' MAMXFLL
 
-    b2binterpktgap(18)      ' MABBIPG $12
+    b2b_inter_pkt_gap(18)      ' MABBIPG $12
 
-    hdxloopback(false)      ' PHCON2
+    hdx_loopback(false)      ' PHCON2
 
-    phyloopback(false)      ' PHCON1
-    phypowered(true)        ' PHCON1
-    phyfullduplex(true)    ' PHCON1
-    fullduplex(true)
+    phy_loopback(false)      ' PHCON1
+    phy_powered(true)        ' PHCON1
+    phy_full_duplex(true)    ' PHCON1
+    full_duplex(true)
 
-    phyledamode(%100)       ' PHLCON LED A: display link status
-    phyledbmode(%111)       ' LED B: display tx/rx activity
-    phyledstretch(true)     ' lengthen LED pulses
-    rxenabled(true)
+    phy_led_a_mode(%100)       ' PHLCON LED A: display link status
+    phy_led_b_mode(%111)       ' LED B: display tx/rx activity
+    phy_led_stretch(true)     ' lengthen LED pulses
+    rx_enabled(true)
 
-PUB B2BInterPktGap(dly): curr_dly  'XXX tentatively named
+PUB b2b_inter_pkt_gap(dly): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for back-to-back packets
 '   Valid values: 0..127
 '   Any other value polls the chip and returns the current setting
@@ -146,7 +147,7 @@ PUB B2BInterPktGap(dly): curr_dly  'XXX tentatively named
             readreg(core#MABBIPG, 1, @curr_dly)
             return
 
-PUB BackOff(state): curr_state  'XXX tentatively named
+PUB backoff(state): curr_state  'XXX tentatively named
 ' Enable backoff
 '   Valid values:
 '      *TRUE (-1 or 1): after collision, MAC will delay using
@@ -165,7 +166,7 @@ PUB BackOff(state): curr_state  'XXX tentatively named
     state := ((curr_state & core#NOBKOFF_MASK) | state)
     writereg(core#MACON4, 1, @state)
 
-PUB BackPressBackOff(state): curr_state 'XXX tentatively named
+PUB backpress_backoff(state): curr_state 'XXX tentatively named
 ' Enable backoff during backpressure
 '   Valid values:
 '      *TRUE (-1 or 1): after causing a collision, MAC will delay using
@@ -184,18 +185,18 @@ PUB BackPressBackOff(state): curr_state 'XXX tentatively named
     state := ((curr_state & core#BPEN_MASK) | state)
     writereg(core#MACON4, 1, @state)
 
-PUB CalcChksum{}
+PUB calc_chksum{}
 ' Use DMA engine to calculate checksum
     regbits_set(core#ECON1, core#DMAST_BITS | core#CSUMEN_BITS)
 
-PUB ClkReady{}: status
+PUB clk_ready{}: status
 ' Flag indicating clock is ready
 '   Returns: TRUE (-1) or FALSE (0)
     status := 0
     readreg(core#ESTAT, 1, @status)
     return ((status & core#CLKRDY_BITS) == 1)
 
-PUB CollisionWin(nr_bytes): curr_nr 'XXX tentatively named
+PUB collision_win(nr_bytes): curr_nr 'XXX tentatively named
 ' Set collision window, in number of bytes
 '   Valid values: 0..63 (default: 55)
 '   Any other value polls the chip and returns the current setting
@@ -208,17 +209,17 @@ PUB CollisionWin(nr_bytes): curr_nr 'XXX tentatively named
             readreg(core#MACLCON2, 1, @curr_nr)
             return
 
-PUB CurrPtr{}: p
+PUB curr_ptr{}: p
 
-    return fifowrptr(-2)
+    return fifo_wr_ptr(-2)
 
-PUB DMAReady{}: flag
+PUB dma_ready{}: flag
 ' Flag indicating DMA engine is ready
     flag := 0
     readreg(core#ECON1, 1, @flag)
     return ((flag & core#DMAST_BITS) == 0)
 
-PUB FIFOPtrAutoInc(state): curr_state
+PUB fifo_ptr_auto_inc(state): curr_state
 ' Auto-increment FIFO pointer when writing
 '   Valid values: TRUE (-1) or FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -233,7 +234,7 @@ PUB FIFOPtrAutoInc(state): curr_state
             readreg(core#ECON2, 1, @curr_state)
             return (((curr_state >> core#AUTOINC) & 1) == 1)
 
-PUB FIFORdPtr(rxpos): curr_ptr
+PUB fifo_rd_ptr(rxpos): curr_ptr
 ' Set read position within FIFO
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -245,7 +246,7 @@ PUB FIFORdPtr(rxpos): curr_ptr
             readreg(core#ERDPTL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFORXEnd(rxe): curr_ptr
+PUB fifo_rx_end(rxe): curr_ptr
 ' Set ending position within FIFO for RX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -257,7 +258,7 @@ PUB FIFORXEnd(rxe): curr_ptr
             readreg(core#ERXNDL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFORXRdPtr(rxrd): curr_rdpos
+PUB fifo_rx_rd_ptr(rxrd): curr_rdpos
 ' Set receive read pointer XXX clarify
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -269,7 +270,7 @@ PUB FIFORXRdPtr(rxrd): curr_rdpos
             readreg(core#ERXRDPTL, 2, @curr_rdpos)
             return curr_rdpos
 
-PUB FIFORXWrPtr(rxwr): curr_wrpos
+PUB fifo_rx_wr_ptr(rxwr): curr_wrpos
 ' Set receive write pointer XXX clarify
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -281,7 +282,7 @@ PUB FIFORXWrPtr(rxwr): curr_wrpos
             readreg(core#ERXWRPTL, 2, @curr_wrpos)
             return curr_wrpos
 
-PUB FIFORXStart(rxs): curr_ptr
+PUB fifo_rx_start(rxs): curr_ptr
 ' Set starting position within FIFO for RX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -293,7 +294,7 @@ PUB FIFORXStart(rxs): curr_ptr
             readreg(core#ERXSTL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFOTXEnd(ptr): curr_ptr
+PUB fifo_tx_end(ptr): curr_ptr
 ' Set starting position within FIFO for TX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -305,7 +306,7 @@ PUB FIFOTXEnd(ptr): curr_ptr
             readreg(core#ETXNDL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFOTXStart(ptr): curr_ptr
+PUB fifo_tx_start(ptr): curr_ptr
 ' Set starting position within FIFO for TX region
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -317,7 +318,7 @@ PUB FIFOTXStart(ptr): curr_ptr
             readreg(core#ETXSTL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FIFOWrPtr(ptr): curr_ptr
+PUB fifo_wr_ptr(ptr): curr_ptr
 ' Set write position within FIFO
 '   Valid values: 0..8191
 '   Any other value polls the chip and returns the current setting
@@ -329,7 +330,7 @@ PUB FIFOWrPtr(ptr): curr_ptr
             readreg(core#EWRPTL, 2, @curr_ptr)
             return curr_ptr
 
-PUB FrameLenCheck(state): curr_state    'XXX tentatively named
+PUB frame_len_check(state): curr_state    'XXX tentatively named
 ' Enable frame length checking
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -344,7 +345,7 @@ PUB FrameLenCheck(state): curr_state    'XXX tentatively named
     state := ((curr_state & core#FRMLNEN_MASK) | state)
     writereg(core#MACON3, 1, @state)
 
-PUB FramePadding(mode): curr_md | txcrcen    'XXX tentatively named
+PUB frame_padding(mode): curr_md | txcrcen    'XXX tentatively named
 ' Set frame padding mode
 '   Valid values:
 '       VLAN (%101):
@@ -370,7 +371,7 @@ PUB FramePadding(mode): curr_md | txcrcen    'XXX tentatively named
     mode := ((curr_md & core#PADCFG_MASK) | mode) | txcrcen
     writereg(core#MACON3, 1, @mode)
 
-PUB FullDuplex(state): curr_state
+PUB full_duplex(state): curr_state
 ' Enable full-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -385,7 +386,7 @@ PUB FullDuplex(state): curr_state
     state := ((curr_state & core#FULDPX_MASK) | state)
     writereg(core#MACON3, 1, @state)
 
-PUB GetNodeAddress(ptr_addr)
+PUB get_node_address(ptr_addr)
 ' Get this node's currently set MAC address
 '   NOTE: Buffer pointed to by ptr_addr must be 6 bytes long
     readreg(core#MAADR1, 1, ptr_addr+5)         '
@@ -395,7 +396,7 @@ PUB GetNodeAddress(ptr_addr)
     readreg(core#MAADR5, 1, ptr_addr+1)
     readreg(core#MAADR6, 1, ptr_addr)
 
-PUB HDXLoopback(state): curr_state
+PUB hdx_loopback(state): curr_state
 ' Enable loopback mode when operating in half-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -413,7 +414,7 @@ PUB HDXLoopback(state): curr_state
     state := ((curr_state & core#HDLDIS_MASK) | state)
     writereg(core#PHCON2, 1, @state)
 
-PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
+PUB inet_chksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
 
     ck_st += TXSTART+1
     ck_end += TXSTART
@@ -424,22 +425,22 @@ PUB InetChksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
     readreg(core#EDMANDL, 2, @nd)
 
     { ERRATA #15: Wait for receive to finish }
-    repeat while rxbusy{}
+    repeat while rx_busy{}
 
-    calcchksum{}
+    calc_chksum{}
 
-    repeat until dmaready{}
+    repeat until dma_ready{}
 
     ck_end := ck_dest + TXSTART+1
 
     chk := 0
     readreg(core#EDMACSL, 2, @chk)
 
-    fifowrptr(ck_end)
+    fifo_wr_ptr(ck_end)
 
     wrword_msbf(chk)
 
-PUB IntClear(mask)
+PUB int_clear(mask)
 ' Clear interrupts
 '   Valid values:
 '       Bits: 6..3, 1, 0 (set a bit to clear the corresponding interrupt flag)
@@ -453,7 +454,7 @@ PUB IntClear(mask)
     mask &= core#EIR_CLRBITS
     writereg(core#EIR, 1, @mask)
 
-PUB InterPktGap(dly): curr_dly  'XXX tentatively named
+PUB inter_pkt_gap(dly): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for _non_-back-to-back packets
 '   Valid values: 0..127
 '   Any other value polls the chip and returns the current setting
@@ -466,7 +467,7 @@ PUB InterPktGap(dly): curr_dly  'XXX tentatively named
             readreg(core#MAIPGL, 1, @curr_dly)
             return
 
-PUB InterPktGapHDX(dly): curr_dly  'XXX tentatively named
+PUB inter_pkt_gap_hdx(dly): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for _non_-back-to-back packets (for half-duplex)
 '   Valid values: 0..127
 '   Any other value polls the chip and returns the current setting
@@ -479,7 +480,7 @@ PUB InterPktGapHDX(dly): curr_dly  'XXX tentatively named
             readreg(core#MAIPGH, 1, @curr_dly)
             return
 
-PUB Interrupt{}: int_src
+PUB interrupt{}: int_src
 ' Interrupt flags
 '   Returns: bits 6..0
 '       6: receive packet pending
@@ -492,7 +493,7 @@ PUB Interrupt{}: int_src
     int_src := 0
     readreg(core#EIR, 1, @int_src)
 
-PUB IntMask(mask)
+PUB int_mask(mask)
 ' Enable interrupt flags
 '   Valid values:
 '       Bits: 6..3, 1, 0
@@ -505,7 +506,7 @@ PUB IntMask(mask)
     mask &= core#EIE_MASK
     writereg(core#EIE, 1, @mask)
 
-PUB MACRXEnabled(state): curr_state 'XXX tentative name
+PUB mac_rx_enabled(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -520,7 +521,7 @@ PUB MACRXEnabled(state): curr_state 'XXX tentative name
     state := ((curr_state & core#MARXEN_MASK) | state)
     writereg(core#MACON1, 1, @state)
 
-PUB MaxFrameLen(len): curr_len
+PUB max_frame_len(len): curr_len
 ' Set maximum frame length
 '   Valid values: 0..65535
 '   Any other value polls the chip and returns the current setting
@@ -532,7 +533,7 @@ PUB MaxFrameLen(len): curr_len
             readreg(core#MAMXFLL, 2, @curr_len)
             return curr_len
 
-PUB MaxRetransmits(max_nr): curr_max
+PUB max_retransmits(max_nr): curr_max
 ' Set maximum number of retransmissions
 '   Valid values: 0..15 (default: 15)
 '   Any other value polls the chip and returns the current setting
@@ -544,7 +545,7 @@ PUB MaxRetransmits(max_nr): curr_max
             curr_max := 0
             readreg(core#MACLCON1, 1, @curr_max)
 
-PUB NodeAddress(ptr_addr)
+PUB node_address(ptr_addr)
 ' Set this node's MAC address
 '   Valid values: pointer to six 8-bit values
     writereg(core#MAADR1, 1, ptr_addr+5)        '
@@ -554,7 +555,7 @@ PUB NodeAddress(ptr_addr)
     writereg(core#MAADR5, 1, ptr_addr+1)
     writereg(core#MAADR6, 1, ptr_addr)
 
-PUB PHYFullDuplex(state): curr_state    'XXX tentatively named
+PUB phy_full_duplex(state): curr_state    'XXX tentatively named
 ' Set PHY to full-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -569,7 +570,7 @@ PUB PHYFullDuplex(state): curr_state    'XXX tentatively named
     state := ((curr_state & core#PDPXMD_MASK) | state)
     writereg(core#PHCON1, 1, @state)
 
-PUB PHYLEDAMode(mode): curr_md  'XXX tentatively named
+PUB phy_led_a_mode(mode): curr_md  'XXX tentatively named
 ' Configure PHY LED A mode
 '   Valid values:
 '       %0001: display transmit activity
@@ -596,7 +597,7 @@ PUB PHYLEDAMode(mode): curr_md  'XXX tentatively named
     mode := ((curr_md & core#LACFG_MASK) | mode)
     writereg(core#PHLCON, 1, @mode)
 
-PUB PHYLEDBMode(mode): curr_md    'XXX tentatively named
+PUB phy_led_b_mode(mode): curr_md    'XXX tentatively named
 ' Configure PHY LED B mode
 '   Valid values:
 '       %0001: display transmit activity
@@ -623,7 +624,7 @@ PUB PHYLEDBMode(mode): curr_md    'XXX tentatively named
     mode := ((curr_md & core#LBCFG_MASK) | mode)
     writereg(core#PHLCON, 1, @mode)
 
-PUB PHYLEDStretch(state): curr_state    'XXX tentatively named
+PUB phy_led_stretch(state): curr_state    'XXX tentatively named
 ' Lengthen LED pulses
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -638,7 +639,7 @@ PUB PHYLEDStretch(state): curr_state    'XXX tentatively named
     state := ((curr_state & core#STRCH_MASK) | state)
     writereg(core#PHLCON, 1, @state)
 
-PUB PHYLinkState{}: state    'XXX tentatively named
+PUB phy_link_state{}: state    'XXX tentatively named
 ' Get PHY Link state
 '   Returns:
 '       DOWN (0): link down
@@ -647,7 +648,7 @@ PUB PHYLinkState{}: state    'XXX tentatively named
     readreg(core#PHSTAT2, 1, @state)
     return ((state >> core#LSTAT) & 1)
 
-PUB PHYLoopback(state): curr_state    'XXX tentatively named
+PUB phy_loopback(state): curr_state    'XXX tentatively named
 ' Loop-back all data transmitted and disable interface to twisted-pair
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -662,7 +663,7 @@ PUB PHYLoopback(state): curr_state    'XXX tentatively named
     state := ((curr_state & core#PLOOPBK_MASK) | state)
     writereg(core#PHCON1, 1, @state)
 
-PUB PHYPowered(state): curr_state    'XXX tentatively named
+PUB phy_powered(state): curr_state    'XXX tentatively named
 ' Power down PHY
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -679,7 +680,7 @@ PUB PHYPowered(state): curr_state    'XXX tentatively named
     state := ((curr_state & core#PPWRSV_MASK) | state)
     writereg(core#PHCON1, 1, @state)
 
-PUB PHYReset{} | tmp    'XXX tentatively named
+PUB phy_reset{} | tmp    'XXX tentatively named
 ' Reset PHY
     tmp := core#PRST_BITS
     writereg(core#PHCON1, 1, @tmp)
@@ -690,7 +691,7 @@ PUB PHYReset{} | tmp    'XXX tentatively named
         readreg(core#PHCON1, 1, @tmp)
     while (tmp & core#PRST_BITS)
 
-PUB PktCnt{}: pcnt
+PUB pkt_cnt{}: pcnt
 ' Get count of packets received
 '   Returns: u8
 '   NOTE: If this value reaches/exceeds 255, any new packets received will be
@@ -700,7 +701,7 @@ PUB PktCnt{}: pcnt
     pcnt := 0
     readreg(core#EPKTCNT, 1, @pcnt)
 
-PUB PktCtrl(mask)
+PUB pkt_ctrl(mask)
 ' Set per-packet control mask
 '   Bits: 3..0
 '       3: huge frame enable
@@ -720,14 +721,14 @@ PUB PktCtrl(mask)
 '           0: the above bits will be ignored and configuration will be
 '               defined by FramePadding(), XXX TBD
     mask &= $0f
-    txpayload(@mask, 1)
+    tx_payload(@mask, 1)
 
-PUB PktDec{}
+PUB pkt_dec{}
 ' Decrement packet counter
 '   NOTE: This _must_ be performed after considering a packet to be "read"
     regbits_set(core#ECON2, core#PKTDEC_BITS)
 
-PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
+PUB pkt_filter(mask): curr_mask  'XXX tentative name and interface
 ' Set ethernet receive filter mask
 '   Bits: 7..0
 '   7: unicast filter enable
@@ -778,7 +779,7 @@ PUB PktFilter(mask): curr_mask  'XXX tentative name and interface
         curr_mask := 0
         readreg(core#ERXFCON, 1, @curr_mask)
 
-PUB RdBlk_LSBF(ptr_buff, len): ptr
+PUB rdblk_lsbf(ptr_buff, len): ptr
 
     case len
         1..8191:
@@ -787,7 +788,7 @@ PUB RdBlk_LSBF(ptr_buff, len): ptr
             spi.rdblock_lsbf(ptr_buff, len)
             outa[_CS] := 1
 
-PUB RdBlk_MSBF(ptr_buff, len): ptr | i
+PUB rdblk_msbf(ptr_buff, len): ptr | i
 
     case len
         1..8191:
@@ -797,21 +798,21 @@ PUB RdBlk_MSBF(ptr_buff, len): ptr | i
                 byte[ptr_buff][i] := spi.rd_byte{}'spi.rdblock_msbf(ptr_buff, len)
             outa[_CS] := 1
 
-PUB Rd_Byte{}: b
+PUB rd_byte{}: b
 
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     b := spi.rd_byte{}
     outa[_CS] := 1
 
-PUB RdLong_LSBF{}: l
+PUB rdlong_lsbf{}: l
 
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     l := spi.rdlong_lsbf{}
     outa[_CS] := 1
 
-PUB RdLong_MSBF{}: l | i
+PUB rdlong_msbf{}: l | i
 
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
@@ -819,14 +820,14 @@ PUB RdLong_MSBF{}: l | i
         l.byte[i] := spi.rd_byte{}
     outa[_CS] := 1
 
-PUB RdWord_LSBF{}: w
+PUB rdword_lsbf{}: w
 
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     w := spi.rdword_lsbf{}
     outa[_CS] := 1
 
-PUB RdWord_MSBF{}: w
+PUB rdword_msbf{}: w
 
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
@@ -835,22 +836,22 @@ PUB RdWord_MSBF{}: w
     w.byte[0] := spi.rd_byte{}
     outa[_CS] := 1
 
-PUB Reset{}
+PUB reset{}
 ' Perform soft-reset
     cmd(core#SRC)
 
-PUB RevID{}: id
+PUB rev_id{}: id
 ' Get device revision
     id := 0
     readreg(core#EREVID, 1, @id)
 
-PUB RXBusy{}: flag
+PUB rx_busy{}: flag
 
     flag := 0
     readreg(core#ESTAT, 1, @flag)
     return ((flag & core#RXBUSY_BITS) <> 0)
 
-PUB RXEnabled(state): curr_state
+PUB rx_enabled(state): curr_state
 ' Enable reception of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -864,7 +865,7 @@ PUB RXEnabled(state): curr_state
             readreg(core#ECON1, 1, @curr_state)
             return (((curr_state >> core#RXEN) & 1) == 1)
 
-PUB RXFlowCtrl(state): curr_state   'XXX tentatively named
+PUB rx_flow_ctrl(state): curr_state   'XXX tentatively named
 ' Enable receive flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -879,7 +880,7 @@ PUB RXFlowCtrl(state): curr_state   'XXX tentatively named
     state := ((curr_state & core#RXPAUS_MASK) | state)
     writereg(core#MACON1, 1, @state)
 
-PUB RXPayload(ptr_buff, nr_bytes)
+PUB rx_payload(ptr_buff, nr_bytes)
 ' Receive payload from FIFO
 '   Valid values:
 '       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
@@ -891,12 +892,11 @@ PUB RXPayload(ptr_buff, nr_bytes)
             spi.rdblock_lsbf(ptr_buff, nr_bytes)
             outa[_CS] := 1
 
-PUB SetPtr(p)
+PUB set_ptr(p)
 
-'    return 0
-    fifowrptr(p)
+    fifo_wr_ptr(p)
 
-PUB TXDefer(state): curr_state  'XXX tentatively named
+PUB tx_defer(state): curr_state  'XXX tentatively named
 ' Defer transmission
 '   Valid values:
 '       TRUE (-1 or 1): MAC waits indefinitely for medium to become free
@@ -916,7 +916,7 @@ PUB TXDefer(state): curr_state  'XXX tentatively named
     state := ((curr_state & core#DEFER_MASK) | state)
     writereg(core#MACON4, 1, @state)
 
-PUB TXEnabled(state): curr_state | checked
+PUB tx_enabled(state): curr_state | checked
 ' Enable transmission of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -940,7 +940,7 @@ PUB TXEnabled(state): curr_state | checked
             return (((curr_state >> core#TXRTS) & 1) == 1)
     regbits_clr(core#ECON1, core#TXRTS_BITS)
 
-PUB TXFlowCtrl(state): curr_state   'XXX tentatively named
+PUB tx_flow_ctrl(state): curr_state   'XXX tentatively named
 ' Enable transmit flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -955,7 +955,7 @@ PUB TXFlowCtrl(state): curr_state   'XXX tentatively named
     state := ((curr_state & core#TXPAUS_MASK) | state)
     writereg(core#MACON1, 1, @state)
 
-PUB TXPayload(ptr_buff, nr_bytes)
+PUB tx_payload(ptr_buff, nr_bytes)
 ' Queue payload to be transmitted
 '   Valid values:
 '       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
@@ -967,7 +967,7 @@ PUB TXPayload(ptr_buff, nr_bytes)
             spi.wrblock_lsbf(ptr_buff, nr_bytes)
             outa[_CS] := 1
 
-PUB WrBlk_LSBF(ptr_buff, len): ptr
+PUB wrblk_lsbf(ptr_buff, len): ptr
 
     case len
         1..8191:
@@ -976,7 +976,7 @@ PUB WrBlk_LSBF(ptr_buff, len): ptr
             spi.wrblock_lsbf(ptr_buff, len)
             outa[_CS] := 1
 
-PUB WrBlk_MSBF(ptr_buff, len): ptr | i
+PUB wrblk_msbf(ptr_buff, len): ptr | i
 
     case len
         1..8191:
@@ -987,7 +987,7 @@ PUB WrBlk_MSBF(ptr_buff, len): ptr | i
                 spi.wr_byte(byte[ptr_buff][i])
             outa[_CS] := 1
 
-PUB Wr_Byte(b): len
+PUB wr_byte(b): len
 
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
@@ -995,7 +995,7 @@ PUB Wr_Byte(b): len
     outa[_CS] := 1
     return 1
 
-PUB Wr_ByteX(b, nr_bytes): len
+PUB wr_byte_x(b, nr_bytes): len
 
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
@@ -1004,7 +1004,7 @@ PUB Wr_ByteX(b, nr_bytes): len
     outa[_CS] := 1
     return nr_bytes
 
-PUB WrLong_LSBF(l): len
+PUB wrlong_lsbf(l): len
 
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
@@ -1012,7 +1012,7 @@ PUB WrLong_LSBF(l): len
     outa[_CS] := 1
     return 4
 
-PUB WrLong_MSBF(l): len | i
+PUB wrlong_msbf(l): len | i
 
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
@@ -1022,7 +1022,7 @@ PUB WrLong_MSBF(l): len | i
     outa[_CS] := 1
     return 4
 
-PUB WrWord_LSBF(w): len
+PUB wrword_lsbf(w): len
 
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
@@ -1030,7 +1030,7 @@ PUB WrWord_LSBF(w): len
     outa[_CS] := 1
     return 2
 
-PUB WrWord_MSBF(w): len
+PUB wrword_msbf(w): len
 
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
@@ -1040,7 +1040,7 @@ PUB WrWord_MSBF(w): len
     outa[_CS] := 1
     return 2
 
-PRI bankSel(bank_nr): curr_bank
+PRI bank_sel(bank_nr): curr_bank
 ' Select register bank
 '   Valid values: 0..3
 '   Any other value polls the chip and returns the current setting
@@ -1068,10 +1068,10 @@ PRI cmd(cmd_nr)
         other:
             return
 
-PRI MIIReady{}: flag
+PRI mii_ready{}: flag
 ' Get MII readiness status
 '   Returns: TRUE (-1) or FALSE (0)
-    banksel(3)
+    bank_sel(3)
     flag := 0
     outa[_CS] := 0
     spi.wr_byte(core#RD_CTRL | core#MISTAT)
@@ -1093,11 +1093,11 @@ CON
     MII     = 2
     PHY     = 3
 
-PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
+PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
 ' Read nr_bytes from the device into ptr_buff
     case reg_nr.byte[TYPE]
         ETH:                                    ' Ethernet regs
-            banksel(reg_nr.byte[BANK])
+            bank_sel(reg_nr.byte[BANK])
             case reg_nr.byte[REGNR]             ' validate register num
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
@@ -1109,7 +1109,7 @@ PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
                 other:                          ' invalid reg_nr
                     return
         MAC, MII:                               ' MAC or MII regs
-            banksel(reg_nr.byte[BANK])
+            bank_sel(reg_nr.byte[BANK])
             case reg_nr.byte[REGNR]
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
@@ -1122,7 +1122,7 @@ PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
                 other:
                     return
         PHY:                                    ' PHY regs
-            banksel(2)                          ' for MIREGADR
+            bank_sel(2)                          ' for MIREGADR
             outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MIREGADR)
             spi.wr_byte(reg_nr.byte[REGNR])
@@ -1134,9 +1134,9 @@ PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
             outa[_CS] := 1
             time.usleep(11)                     ' 10.24uS
 
-            repeat until miiready{}
+            repeat until mii_ready{}
 
-            banksel(2)
+            bank_sel(2)
             outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MICMD)
             spi.wr_byte(0)
@@ -1154,25 +1154,25 @@ PRI readReg(reg_nr, nr_bytes, ptr_buff) | i
             byte[ptr_buff][1] := spi.rd_byte{}
             outa[_CS] := 1
 
-PRI regBits_Clr(reg_nr, field)
+PRI regbits_clr(reg_nr, field)
 ' Clear bitfield 'field' in Ethernet reg_nrister 'reg_nr'
     outa[_CS] := 0
     spi.wr_byte(core#BFC | reg_nr)
     spi.wr_byte(field)
     outa[_CS] := 1
 
-PRI regBits_Set(reg_nr, field)
+PRI regbits_set(reg_nr, field)
 ' Set bitfield 'field' in Ethernet reg_nrister 'reg_nr'
     outa[_CS] := 0
     spi.wr_byte(core#BFS | reg_nr)
     spi.wr_byte(field)
     outa[_CS] := 1
 
-PRI writeReg(reg_nr, nr_bytes, ptr_buff) | i
+PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
 ' Write nr_bytes to the device from ptr_buff
     case reg_nr.byte[TYPE]
         ETH, MAC, MII:                          ' Ethernet, MAC, MII regs
-            banksel(reg_nr.byte[BANK])
+            bank_sel(reg_nr.byte[BANK])
             case reg_nr.byte[REGNR]
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
@@ -1183,7 +1183,7 @@ PRI writeReg(reg_nr, nr_bytes, ptr_buff) | i
                 other:
                     return
         PHY:                                    ' PHY regs
-            banksel(2)                          ' for MIREGADR
+            bank_sel(2)                          ' for MIREGADR
             outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MIREGADR)
             spi.wr_byte(reg_nr.byte[REGNR])
@@ -1199,7 +1199,7 @@ PRI writeReg(reg_nr, nr_bytes, ptr_buff) | i
             spi.wr_byte(byte[ptr_buff][1])
             outa[_CS] := 1
 
-            repeat until miiready{}
+            repeat until mii_ready{}
 
         other:
             return
