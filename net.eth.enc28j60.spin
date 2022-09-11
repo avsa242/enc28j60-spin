@@ -96,7 +96,7 @@ PUB preset_fdx{}
     tx_enabled(false)
 
     { set up on-chip FIFO }
-    fifo_ptr_auto_inc(true)
+    fifo_set_ptr_auto_inc(true)
     fifo_set_rd_ptr(RXSTART)
     fifo_set_rx_start(RXSTART)
     fifo_set_rx_rd_ptr(RXSTOP)
@@ -112,14 +112,14 @@ PUB preset_fdx{}
 
     tx_defer(true)           ' MACON4
 
-    collision_win(63)        ' MACLCON2
+    set_collision_win(63)        ' MACLCON2
 
-    inter_pkt_gap(18)         ' MAIPGL $12
-    inter_pkt_gap_hdx(12)      ' MAIPGH $0c
+    set_inter_pkt_gap(18)         ' MAIPGL $12
+    set_inter_pkt_gap_hdx(12)      ' MAIPGH $0c
 
     max_frame_len(1518)       ' MAMXFLL
 
-    b2b_inter_pkt_gap(18)      ' MABBIPG $12
+    set_b2b_inter_pkt_gap(18)      ' MABBIPG $12
 
     hdx_loopback(false)      ' PHCON2
 
@@ -133,19 +133,18 @@ PUB preset_fdx{}
     phy_led_stretch(true)     ' lengthen LED pulses
     rx_enabled(true)
 
-PUB b2b_inter_pkt_gap(dly): curr_dly  'XXX tentatively named
+PUB b2b_inter_pkt_gap{}: curr_dly
+' Get inter-packet gap delay for back-to-back packets
+    curr_dly := 0
+    readreg(core#MABBIPG, 1, @curr_dly)
+
+PUB set_b2b_inter_pkt_gap(dly)  'XXX tentatively named
 ' Set inter-packet gap delay for back-to-back packets
 '   Valid values: 0..127
-'   Any other value polls the chip and returns the current setting
-'   NOTE: When FullDuplex() == 1, recommended setting is $15
-'       When FullDuplex() == 0, recommended setting is $12
-    case dly
-        0..127:
-            writereg(core#MABBIPG, 1, @dly)
-        other:
-            curr_dly := 0
-            readreg(core#MABBIPG, 1, @curr_dly)
-            return
+'   NOTE: When full_duplex() == 1, recommended setting is 21
+'       When full_duplex() == 0, recommended setting is 18
+    dly := 0 #> dly <# 127
+    writereg(core#MABBIPG, 1, @dly)
 
 PUB backoff(state): curr_state  'XXX tentatively named
 ' Enable backoff
@@ -187,7 +186,7 @@ PUB backpress_backoff(state): curr_state 'XXX tentatively named
 
 PUB calc_chksum{}
 ' Use DMA engine to calculate checksum
-    regbits_set(core#ECON1, core#DMAST_BITS | core#CSUMEN_BITS)
+    regbits_set(core#ECON1, core#CALC_CKSUM)
 
 PUB clk_ready{}: status
 ' Flag indicating clock is ready
@@ -196,22 +195,17 @@ PUB clk_ready{}: status
     readreg(core#ESTAT, 1, @status)
     return ((status & core#CLKRDY_BITS) == 1)
 
-PUB collision_win(nr_bytes): curr_nr 'XXX tentatively named
+PUB collision_win{}: curr_nr
+' Get current collision window length
+    curr_nr := 0
+    readreg(core#MACLCON2, 1, @curr_nr)
+
+PUB set_collision_win(nr_bytes): curr_nr 'XXX tentatively named
 ' Set collision window, in number of bytes
 '   Valid values: 0..63 (default: 55)
-'   Any other value polls the chip and returns the current setting
-'   NOTE: Applies only when FullDuplex() == 0
-    case nr_bytes
-        0..63:
-            writereg(core#MACLCON2, 1, @nr_bytes)
-        other:
-            curr_nr := 0
-            readreg(core#MACLCON2, 1, @curr_nr)
-            return
-
-PUB curr_ptr{}: p
-
-    return fifo_wr_ptr{}
+'   NOTE: Applies only when full_duplex() == 0
+    nr_bytes := 0 #> nr_bytes <# 63
+    writereg(core#MACLCON2, 1, @nr_bytes)
 
 PUB dma_ready{}: flag
 ' Flag indicating DMA engine is ready
@@ -219,20 +213,21 @@ PUB dma_ready{}: flag
     readreg(core#ECON1, 1, @flag)
     return ((flag & core#DMAST_BITS) == 0)
 
-PUB fifo_ptr_auto_inc(state): curr_state
+PUB fifo_ptr_auto_inc{}: curr_state
+
+    curr_state := 0
+    readreg(core#ECON2, 1, @curr_state)
+    return (((curr_state >> core#AUTOINC) & 1) == 1)
+
+PUB fifo_set_ptr_auto_inc(state)
 ' Auto-increment FIFO pointer when writing
 '   Valid values: TRUE (-1) or FALSE (0)
 '   Any other value polls the chip and returns the current setting
 '   NOTE: When reached the end of the FIFO, the pointer wraps to the start
-    case ||(state)
-        0:
-            regbits_clr(core#ECON2, core#AUTOINC_BITS)
-        1:
-            regbits_set(core#ECON2, core#AUTOINC_BITS)
-        other:
-            curr_state := 0
-            readreg(core#ECON2, 1, @curr_state)
-            return (((curr_state >> core#AUTOINC) & 1) == 1)
+    if (state)
+        regbits_set(core#ECON2, core#AUTOINC_BITS)
+    else
+        regbits_clr(core#ECON2, core#AUTOINC_BITS)
 
 PUB fifo_set_rd_ptr(rxpos)
 ' Set read position within FIFO
@@ -446,31 +441,30 @@ PUB int_clear(mask)
     mask &= core#EIR_CLRBITS
     writereg(core#EIR, 1, @mask)
 
-PUB inter_pkt_gap(dly): curr_dly  'XXX tentatively named
+PUB inter_pkt_gap{}: curr_dly
+' Get inter-packet gap delay for _non_-back-to-back packets
+    curr_dly := 0
+    readreg(core#MAIPGL, 1, @curr_dly)
+
+PUB set_inter_pkt_gap(dly) 'XXX tentatively named
 ' Set inter-packet gap delay for _non_-back-to-back packets
 '   Valid values: 0..127
-'   Any other value polls the chip and returns the current setting
 '   NOTE: Recommended setting is $12
-    case dly
-        0..127:
-            writereg(core#MAIPGL, 1, @dly)
-        other:
-            curr_dly := 0
-            readreg(core#MAIPGL, 1, @curr_dly)
-            return
+    dly := 0 #> dly <# 127
+    writereg(core#MAIPGL, 1, @dly)
 
-PUB inter_pkt_gap_hdx(dly): curr_dly  'XXX tentatively named
-' Set inter-packet gap delay for _non_-back-to-back packets (for half-duplex)
+PUB inter_pkt_gap_hdx{}: curr_dly
+' Get inter-packet gap delay for _non_-back-to-back packets (half-duplex mode)
+    curr_dly := 0
+    readreg(core#MAIPGH, 1, @curr_dly)
+
+PUB set_inter_pkt_gap_hdx(dly): curr_dly  'XXX tentatively named
+' Set inter-packet gap delay for _non_-back-to-back packets (half-duplex mode)
 '   Valid values: 0..127
 '   Any other value polls the chip and returns the current setting
 '   NOTE: Recommended setting is $0C
-    case dly
-        0..127:
-            writereg(core#MAIPGH, 1, @dly)
-        other:
-            curr_dly := 0
-            readreg(core#MAIPGH, 1, @curr_dly)
-            return
+    dly := 0 #> dly <# 127
+    writereg(core#MAIPGH, 1, @dly)
 
 PUB interrupt{}: int_src
 ' Interrupt flags
@@ -720,7 +714,12 @@ PUB pkt_dec{}
 '   NOTE: This _must_ be performed after considering a packet to be "read"
     regbits_set(core#ECON2, core#PKTDEC_BITS)
 
-PUB pkt_filter(mask): curr_mask  'XXX tentative name and interface
+PUB pkt_filter{}: fmask
+' Get current packet filter mask
+    fmask := 0
+    readreg(core#ERXFCON, 1, @fmask)
+
+PUB set_pkt_filter(mask)  'XXX tentative name and interface
 ' Set ethernet receive filter mask
 '   Bits: 7..0
 '   7: unicast filter enable
@@ -765,30 +764,23 @@ PUB pkt_filter(mask): curr_mask  'XXX tentative name and interface
 '       if and/or == 0
 '           1: packets accepted if the dest addr is FF:FF:FF:FF:FF:FF
 '           0: filter disabled
-    if (mask => %0000_0000 and mask =< %1111_1111)
-        writereg(core#ERXFCON, 1, @mask)
-    else
-        curr_mask := 0
-        readreg(core#ERXFCON, 1, @curr_mask)
+    mask &= $ff
+    writereg(core#ERXFCON, 1, @mask)
 
 PUB rdblk_lsbf(ptr_buff, len): ptr
 
-    case len
-        1..8191:
-            outa[_CS] := 0
-            spi.wr_byte(core#RD_BUFF)
-            spi.rdblock_lsbf(ptr_buff, len)
-            outa[_CS] := 1
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_BUFF)
+    spi.rdblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
+    outa[_CS] := 1
 
 PUB rdblk_msbf(ptr_buff, len): ptr | i
 
-    case len
-        1..8191:
-            outa[_CS] := 0
-            spi.wr_byte(core#RD_BUFF)
-            repeat i from len-1 to 0
-                byte[ptr_buff][i] := spi.rd_byte{}'spi.rdblock_msbf(ptr_buff, len)
-            outa[_CS] := 1
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_BUFF)
+    repeat i from (1 #> len <# FIFO_MAX)-1 to 0
+        byte[ptr_buff][i] := spi.rd_byte{}'spi.rdblock_msbf(ptr_buff, len)
+    outa[_CS] := 1
 
 PUB rd_byte{}: b
 
@@ -838,24 +830,25 @@ PUB rev_id{}: id
     readreg(core#EREVID, 1, @id)
 
 PUB rx_busy{}: flag
-
+' Flag indicating chip is busy receiving
     flag := 0
     readreg(core#ESTAT, 1, @flag)
     return ((flag & core#RXBUSY_BITS) <> 0)
 
-PUB rx_enabled(state): curr_state
+PUB rx_enabled(state)
 ' Enable reception of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
-'   Any other value polls the chip and returns the current setting
-    case ||(state)
-        0:
-            regbits_clr(core#ECON1, core#RXEN_BITS)
-        1:
-            regbits_set(core#ECON1, core#RXEN_BITS)
-        other:
-            curr_state := 0
-            readreg(core#ECON1, 1, @curr_state)
-            return (((curr_state >> core#RXEN) & 1) == 1)
+    if (state)
+        regbits_set(core#ECON1, core#RXEN_BITS)
+    else
+        regbits_clr(core#ECON1, core#RXEN_BITS)
+
+PUB is_rx_enabled{}: rxen
+' Flag indicating reception of packets is enabled
+'   Returns: TRUE (-1) or FALSE
+    rxen := 0
+    readreg(core#ECON1, 1, @rxen)
+    return (((rxen >> core#RXEN) & 1) == 1)
 
 PUB rx_flow_ctrl(state): curr_state   'XXX tentatively named
 ' Enable receive flow control
@@ -877,12 +870,10 @@ PUB rx_payload(ptr_buff, nr_bytes)
 '   Valid values:
 '       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
 '   NOTE: ptr_buff must point to a buffer at least nr_bytes long
-    case nr_bytes
-        1..8191:
-            outa[_CS] := 0
-            spi.wr_byte(core#RD_BUFF)
-            spi.rdblock_lsbf(ptr_buff, nr_bytes)
-            outa[_CS] := 1
+    outa[_CS] := 0
+    spi.wr_byte(core#RD_BUFF)
+    spi.rdblock_lsbf(ptr_buff, 1 #> nr_bytes)
+    outa[_CS] := 1
 
 PUB tx_defer(state): curr_state  'XXX tentatively named
 ' Defer transmission
@@ -891,7 +882,7 @@ PUB tx_defer(state): curr_state  'XXX tentatively named
 '           if it's occupied (when attempting to transmit)
 '       FALSE (0): MAC aborts transmission after deferral limit reached
 '   Any other value polls the chip and returns the current setting
-'   NOTE: Applies _only_ when FullDuplex() == FALSE
+'   NOTE: Applies _only_ when full_duplex() == FALSE
 '   NOTE: Set to TRUE for IEEE 802.3 compliance
     curr_state := 0
     readreg(core#MACON4, 1, @curr_state)
@@ -948,32 +939,26 @@ PUB tx_payload(ptr_buff, nr_bytes)
 '   Valid values:
 '       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
 '   NOTE: ptr_buff must point to a buffer at least nr_bytes long
-    case nr_bytes
-        1..8191:
-            outa[_CS] := 0
-            spi.wr_byte(core#WR_BUFF)
-            spi.wrblock_lsbf(ptr_buff, nr_bytes)
-            outa[_CS] := 1
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+    spi.wrblock_lsbf(ptr_buff, 1 #> nr_bytes <# FIFO_MAX)
+    outa[_CS] := 1
 
 PUB wrblk_lsbf(ptr_buff, len): ptr
 
-    case len
-        1..8191:
-            outa[_CS] := 0
-            spi.wr_byte(core#WR_BUFF)
-            spi.wrblock_lsbf(ptr_buff, len)
-            outa[_CS] := 1
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+    spi.wrblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
+    outa[_CS] := 1
 
 PUB wrblk_msbf(ptr_buff, len): ptr | i
 
-    case len
-        1..8191:
-            outa[_CS] := 0
-            spi.wr_byte(core#WR_BUFF)
-'            spi.wrblock_msbf(ptr_buff, len)
-            repeat i from len-1 to 0
-                spi.wr_byte(byte[ptr_buff][i])
-            outa[_CS] := 1
+    outa[_CS] := 0
+    spi.wr_byte(core#WR_BUFF)
+'    spi.wrblock_msbf(ptr_buff, len)
+    repeat i from len-1 to 0
+        spi.wr_byte(byte[ptr_buff][i])
+    outa[_CS] := 1
 
 PUB wr_byte(b): len
 

@@ -104,7 +104,7 @@ PUB main{} | rn
     setup{}
 
     math.rndseed(cnt)
-    net.pkt_filter(0)
+    net.set_pkt_filter(0)
     net.preset_fdx{}
 
     net.node_address(@_mac_local)

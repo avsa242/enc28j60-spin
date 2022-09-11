@@ -105,7 +105,7 @@ PRI tcp_send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tc
     start_frame{}
     ethii_reply
     ipv4_reply{}
-    tcp_st := net.fifo_wr_ptr(-2)
+    tcp_st := net.fifo_wr_ptr{}
 
     { swap source/dest ports so as to "reply" }
     net.tcp_swap_ports{}
@@ -116,7 +116,7 @@ PRI tcp_send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tc
     net.tcp_set_hdr_len(0)                        ' same with header length (no TCP opts yet)
     net.tcp_set_urgent_ptr(0)
     net.wr_tcp_header{}
-    frm_end := net.fifo_wr_ptr(-2)                    ' update frame end: add TCP header
+    frm_end := net.fifo_wr_ptr{}                    ' update frame end: add TCP header
 
     { write TCP options, as necessary }
     if (flags & net#SYN_BIT)
@@ -131,12 +131,12 @@ PRI tcp_send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tc
         net.write_klv(net#NOOP, 0, false, 0, 0)
         net.write_klv(net#NOOP, 0, false, 0, 0)
         net.write_klv(net#TMSTAMPS, 10, true, net.tcp_timest_ptr{}, net#MSBF)
-    net.tcp_set_hdr_len_bytes(net#TCP_HDR_SZ + (net.fifo_wr_ptr(-2) - frm_end))  ' hdr len = TCP hdr + opts len
-    frm_end := net.fifo_wr_ptr(-2)                    ' update frame end: add TCP options
+    net.tcp_set_hdr_len_bytes(net#TCP_HDR_SZ + (net.fifo_wr_ptr{} - frm_end))  ' hdr len = TCP hdr + opts len
+    frm_end := net.fifo_wr_ptr{}                    ' update frame end: add TCP options
 
-    net.set_ptr(tcp_st + net#TCPH_HDRLEN)
+    net.fifo_set_wr_ptr(tcp_st + net#TCPH_HDRLEN)
     net.wr_byte(net.tcp_hdr_len{} | ((net.tcp_flags{} >> net#NONCE) & 1) )
-    net.set_ptr(frm_end)
+    net.fifo_set_wr_ptr(frm_end)
 
     ipv4_updchksum(net.ip_hdr_len{} + net.tcp_hdr_len_bytes{} + data_len)
 
@@ -152,15 +152,15 @@ PRI tcp_send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tc
     { calc checksum of TCP/IP pseudo header, then the TCP header }
     pseudo_chk := crc.inetchksum(@_tcp_ph_src, 12, $00)
     tcpchk := crc.inetchksum(@_buff[tcp_st], net.tcp_hdr_len_bytes{}, pseudo_chk)
-    net.set_ptr(tcp_st+net#TCPH_CKSUM)
+    net.fifo_set_wr_ptr(tcp_st+net#TCPH_CKSUM)
     net.wrword_msbf(tcpchk)
-    net.set_ptr(frm_end)
+    net.fifo_set_wr_ptr(frm_end)
 
     { if there's a payload, tack it on the end }
     if (data_len > 0)
         net.wrblk_lsbf(ptr_data, data_len)
 
-    eth.tx_payload(@_buff, net.fifo_wr_ptr(-2))
+    eth.tx_payload(@_buff, net.fifo_wr_ptr{})
     send_frame{}
 
 DAT

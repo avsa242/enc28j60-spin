@@ -106,7 +106,7 @@ PUB main{} | rn
     net.init(@_buff)
 
     math.rndseed(cnt)
-    eth.pkt_filter(0)
+    eth.set_pkt_filter(0)
     eth.preset_fdx{}
 
     eth.node_address(@_mac_local)

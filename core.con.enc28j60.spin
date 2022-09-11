@@ -5,7 +5,7 @@
     Description: ENC28J60-specific constants
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Mar 19, 2022
+    Updated Sep 11, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -419,6 +419,7 @@ CON
         TXRTS_MASK  = TXRTS_BITS ^ ECON1_MASK
         RXEN_MASK   = RXEN_BITS ^ ECON1_MASK
         BSEL_MASK   = BSEL_BITS ^ ECON1_MASK
+        CALC_CKSUM  = (DMAST_BITS | CSUMEN_BITS)
 
 PUB null{}
 ' This is not a top-level object
