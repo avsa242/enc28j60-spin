@@ -100,7 +100,7 @@ DAT
         byte net#ROUTER
         byte net#SUBNET_MASK
 
-PUB main{} | rn
+PUB main{}
 
     setup{}
     net.init(@_buff)
@@ -127,8 +127,6 @@ PUB main{} | rn
                 _dhcp_state++
             SELECTING:
                 dhcp_msg(net#DHCPDISCOVER)
-                rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
-                _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
                     if (eth.pkt_cnt{})           ' pkt received?
                         get_frame{}
@@ -148,8 +146,6 @@ PUB main{} | rn
                     _dly := 4                   ' reset delay time
             REQUESTING:
                 dhcp_msg(net#DHCPREQUEST)
-                rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
-                _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
                     if (eth.pkt_cnt{})
                         get_frame{}
@@ -228,6 +224,7 @@ PUB dhcp_msg(msg_t) | tmp
 
     eth.tx_payload(@_buff, net.fifo_wr_ptr{})
     send_frame{}
+    _timer_set := (_dly + (math.rndi(2)-1)) <# 64 ' start counting down
 
 PUB ethii_new(mac_src, mac_dest, ether_t)
 ' Start new ethernet-II frame

@@ -99,7 +99,7 @@ DAT
         byte net#ROUTER
         byte net#SUBNET_MASK
 
-PUB main{} | rn
+PUB main{}
 
     setup{}
 
@@ -123,10 +123,8 @@ PUB main{} | rn
                 _dhcp_state++
             SELECTING:
                 dhcp_msg(net#DHCPDISCOVER)
-                rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
-                _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
-                    if (net.pkt_cnt{})           ' pkt received?
+                    if (net.pkt_cnt{})          ' pkt received?
                         get_frame{}
                         if (process_ethii{} == net#DHCPOFFER)
                             { offer received from DHCP server; request it }
@@ -144,8 +142,6 @@ PUB main{} | rn
                     _dly := 4                   ' reset delay time
             REQUESTING:
                 dhcp_msg(net#DHCPREQUEST)
-                rn := (math.rndi(2)-1)          ' add random (-1..+1) sec delay
-                _timer_set := (_dly + rn) <# 64 ' start counting down
                 repeat
                     if (net.pkt_cnt{})
                         get_frame{}
@@ -221,6 +217,8 @@ PUB dhcp_msg(msg_t) | tmp
     { update IP header with length and checksum }
     ipv4_updchksum(net.ip_hdr_len{} + net.udp_hdr_len{} + net.dhcp_msg_len{})
     send_frame{}
+
+    _timer_set := (_dly + (math.rndi(2)-1)) <# 64 ' start counting down
 
 PUB ethii_new(mac_src, mac_dest, ether_t)
 ' Start new ethernet-II frame
@@ -328,9 +326,6 @@ PUB process_icmp{} | icmp_st, frm_end, icmp_end, icmpchk
         { ECHO request (ping) }
             net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
             if ( (_dhcp_state => BOUND) and (net.ip_dest_addr{} == _my_ip) )
-                ser.fgcolor(ser#GREEN)
-                ser.strln(@"PING!")
-                ser.fgcolor(ser#GREY)
                 start_frame{}
                 ethii_reply{}
                 icmp_st := ipv4_reply{}
@@ -353,6 +348,9 @@ PUB process_icmp{} | icmp_st, frm_end, icmp_end, icmpchk
                 net.fifo_set_wr_ptr(frm_end)
 
                 send_frame{}
+                ser.fgcolor(ser#GREEN)
+                ser.strln(@"PING!")
+                ser.fgcolor(ser#GREY)
 
 PUB process_ipv4{}: msg
 ' Process IPv4 datagrams
