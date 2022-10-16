@@ -5,7 +5,7 @@
     Description: WIP Telnet server, for testing TCP
     Copyright (c) 2022
     Started Apr 16, 2022
-    Updated Sep 11, 2022
+    Updated Oct 16, 2022
     See end of file for terms of use.
    --------------------------------------------
 
@@ -150,8 +150,8 @@ PRI tcp_send(flags, data_len, ptr_data) | ipchk, tcp_st, frm_end, pseudo_chk, tc
 '    ser.hexdump(@_tcp_ph_src, 0, 4, 12, 12) ' inspect pseudo-header
 
     { calc checksum of TCP/IP pseudo header, then the TCP header }
-    pseudo_chk := crc.inetchksum(@_tcp_ph_src, 12, $00)
-    tcpchk := crc.inetchksum(@_buff[tcp_st], net.tcp_hdr_len_bytes(), pseudo_chk)
+    pseudo_chk := crc.inet_chksum(@_tcp_ph_src, 12, $00)
+    tcpchk := crc.inet_chksum(@_buff[tcp_st], net.tcp_hdr_len_bytes(), pseudo_chk)
     net.fifo_set_wr_ptr(tcp_st+net.TCPH_CKSUM)
     net.wrword_msbf(tcpchk)
     net.fifo_set_wr_ptr(frm_end)

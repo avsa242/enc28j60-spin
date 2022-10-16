@@ -10,7 +10,7 @@
         * assembles frames directly on the chip
     Copyright (c) 2022
     Started Sep 10, 2022
-    Updated Sep 11, 2022
+    Updated Oct 16, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -69,9 +69,8 @@ CON
 
 OBJ
 
-    cfg : "core.con.boardcfg.p2eval"
+    cfg : "boardcfg.p2eval"
     ser : "com.serial.terminal.ansi"
-    time: "time"
     net : "net.eth.enc28j60"
     math: "math.int"
     crc : "math.crc"
@@ -440,7 +439,7 @@ PRI cog_timer()
     repeat
         repeat until _timer_set                 ' wait for a timer to be set
         repeat                                  ' wait 1s each loop
-            time.sleep(1)
+            waitms(1_000)
         while --_timer_set                      ' until timer expired
 
 PUB setup()

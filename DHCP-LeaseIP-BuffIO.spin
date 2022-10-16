@@ -10,7 +10,7 @@
         * assembles frames in Propeller RAM, then sends to the chip
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Sep 10, 2022
+    Updated Oct 16, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -62,7 +62,7 @@ CON
 
 OBJ
 
-    cfg : "core.con.boardcfg.ybox2"
+    cfg : "boardcfg.ybox2"
     ser : "com.serial.terminal.ansi"
     time: "time"
     eth : "net.eth.enc28j60"
@@ -284,7 +284,7 @@ PUB ipv4_updchksum(length) | ipchk, ptr_tmp
     net.ip_set_dgram_len(length)
     net.fifo_set_wr_ptr(_ip_st)
     net.wr_ip_header{}
-    ipchk := crc.inetchksum(@_buff[_ip_st], net.ip_hdr_len{}, $00)
+    ipchk := crc.inet_chksum(@_buff[_ip_st], net.ip_hdr_len{}, $00)
     net.fifo_set_wr_ptr(_ip_st+net#IP_CKSUM)
     net.wrword_msbf(ipchk)
 
@@ -353,7 +353,7 @@ PUB process_icmp{} | icmp_st, frm_end, ipchk, icmpchk
                 ipv4_updchksum(net.ip_hdr_len{} + net.icmp_msg_len{} + ICMP_DAT_LEN)
 
                 { update ICMP checksum }
-                icmpchk := crc.inetchksum(@_buff[icmp_st], net.icmp_msg_len{} + ICMP_DAT_LEN, $00)
+                icmpchk := crc.inet_chksum(@_buff[icmp_st], net.icmp_msg_len{} + ICMP_DAT_LEN, $00)
                 net.fifo_set_wr_ptr(icmp_st+net#ICMP_CKSUM)
                 net.wrword_msbf(icmpchk)
                 net.fifo_set_wr_ptr(frm_end)

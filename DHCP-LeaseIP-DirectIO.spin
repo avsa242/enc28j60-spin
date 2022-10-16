@@ -10,7 +10,7 @@
         * assembles frames directly on the chip
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Sep 11, 2022
+    Updated Oct 16, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -62,7 +62,7 @@ CON
 
 OBJ
 
-    cfg : "core.con.boardcfg.ybox2"
+    cfg : "boardcfg.ybox2"
     ser : "com.serial.terminal.ansi"
     time: "time"
     net : "net.eth.enc28j60"

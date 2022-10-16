@@ -47,7 +47,7 @@ VAR
 
 OBJ
 
-    spi : "com.spi.fast-nocs"                   ' PASM SPI engine (20MHz W/10R)
+    spi : "com.spi.20mhz"                   ' PASM SPI engine (20MHz W/10R)
     core: "core.con.enc28j60"                   ' hw-specific constants
     time: "time"                                ' Basic timing functions
 
