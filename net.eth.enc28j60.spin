@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 2022
     Started Feb 21, 2022
-    Updated Sep 11, 2022
+    Updated Nov 13, 2022
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -92,8 +92,8 @@ CON
 
 PUB preset_fdx{}
 ' Preset settings; full-duplex
-    rx_enabled(false)
-    tx_enabled(false)
+    rx_ena(false)
+    tx_ena(false)
 
     { set up on-chip FIFO }
     fifo_set_ptr_auto_inc(true)
@@ -103,35 +103,35 @@ PUB preset_fdx{}
     fifo_set_rx_end(RXSTOP)
     fifo_set_tx_start(TXSTART)
 
-    mac_rx_enabled(true)      ' MACON1
-    rx_flow_ctrl(true)
-    tx_flow_ctrl(true)
+    mac_rx_ena(true)
+    rx_flow_ctrl_ena(true)
+    tx_flow_ctrl_ena(true)
 
-    frame_len_check(true)     ' MACON3
-    frame_padding(PAD60)
+    frame_len_check_ena(true)
+    frame_padding_mode(PAD60)
 
-    tx_defer(true)           ' MACON4
+    tx_defer_ena(true)
 
-    set_collision_win(63)        ' MACLCON2
+    set_collision_win(63)
 
-    set_inter_pkt_gap(18)         ' MAIPGL $12
-    set_inter_pkt_gap_hdx(12)      ' MAIPGH $0c
+    set_inter_pkt_gap(18)
+    set_inter_pkt_gap_hdx(12)
 
-    max_frame_len(1518)       ' MAMXFLL
+    set_max_frame_len(1518)
 
-    set_b2b_inter_pkt_gap(18)      ' MABBIPG $12
+    set_b2b_inter_pkt_gap(18)
 
-    hdx_loopback(false)      ' PHCON2
+    hdx_loopback_ena(false)
 
-    phy_loopback(false)      ' PHCON1
-    phy_powered(true)        ' PHCON1
-    phy_full_duplex(true)    ' PHCON1
-    full_duplex(true)
+    phy_loopback_ena(false)
+    phy_powered(true)
+    phy_full_duplex_ena(true)
+    full_duplex_ena(true)
 
-    phy_led_a_mode(%100)       ' PHLCON LED A: display link status
-    phy_led_b_mode(%111)       ' LED B: display tx/rx activity
-    phy_led_stretch(true)     ' lengthen LED pulses
-    rx_enabled(true)
+    phy_led_a_mode(%100)                        ' LED A: display link status
+    phy_led_b_mode(%111)                        ' LED B: display tx/rx activity
+    phy_led_stretch(true)                       ' lengthen LED pulses
+    rx_ena(true)
 
 PUB b2b_inter_pkt_gap{}: curr_dly
 ' Get inter-packet gap delay for back-to-back packets
@@ -141,8 +141,8 @@ PUB b2b_inter_pkt_gap{}: curr_dly
 PUB set_b2b_inter_pkt_gap(dly)  'XXX tentatively named
 ' Set inter-packet gap delay for back-to-back packets
 '   Valid values: 0..127
-'   NOTE: When full_duplex() == 1, recommended setting is 21
-'       When full_duplex() == 0, recommended setting is 18
+'   NOTE: When full_duplex_ena() == 1, recommended setting is 21
+'       When full_duplex_ena() == 0, recommended setting is 18
     dly := 0 #> dly <# 127
     writereg(core#MABBIPG, 1, @dly)
 
@@ -203,7 +203,7 @@ PUB collision_win{}: curr_nr
 PUB set_collision_win(nr_bytes): curr_nr 'XXX tentatively named
 ' Set collision window, in number of bytes
 '   Valid values: 0..63 (default: 55)
-'   NOTE: Applies only when full_duplex() == 0
+'   NOTE: Applies only when full_duplex_ena() == 0
     nr_bytes := 0 #> nr_bytes <# 63
     writereg(core#MACLCON2, 1, @nr_bytes)
 
@@ -317,7 +317,7 @@ PUB fifo_wr_ptr{}: curr_ptr
     curr_ptr := 0
     readreg(core#EWRPTL, 2, @curr_ptr)
 
-PUB frame_len_check(state): curr_state    'XXX tentatively named
+PUB frame_len_check_ena(state): curr_state    'XXX tentatively named
 ' Enable frame length checking
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -332,7 +332,7 @@ PUB frame_len_check(state): curr_state    'XXX tentatively named
     state := ((curr_state & core#FRMLNEN_MASK) | state)
     writereg(core#MACON3, 1, @state)
 
-PUB frame_padding(mode): curr_md | txcrcen    'XXX tentatively named
+PUB frame_padding_mode(mode): curr_md | txcrcen    'XXX tentatively named
 ' Set frame padding mode
 '   Valid values:
 '       VLAN (%101):
@@ -358,7 +358,7 @@ PUB frame_padding(mode): curr_md | txcrcen    'XXX tentatively named
     mode := ((curr_md & core#PADCFG_MASK) | mode) | txcrcen
     writereg(core#MACON3, 1, @mode)
 
-PUB full_duplex(state): curr_state
+PUB full_duplex_ena(state): curr_state
 ' Enable full-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -383,7 +383,7 @@ PUB get_node_address(ptr_addr)
     readreg(core#MAADR5, 1, ptr_addr+1)
     readreg(core#MAADR6, 1, ptr_addr)
 
-PUB hdx_loopback(state): curr_state
+PUB hdx_loopback_ena(state): curr_state
 ' Enable loopback mode when operating in half-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -402,7 +402,10 @@ PUB hdx_loopback(state): curr_state
     writereg(core#PHCON2, 1, @state)
 
 PUB inet_chksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
-
+' Calculate checksum of frame in buffer and store the result
+'   ck_st: start of frame data to checksum
+'   ck_end: end of frame data to checksum
+'   ck_dest: location in frame data to write checksum to
     ck_st += TXSTART+1
     ck_end += TXSTART
 
@@ -492,7 +495,7 @@ PUB int_mask(mask)
     mask &= core#EIE_MASK
     writereg(core#EIE, 1, @mask)
 
-PUB mac_rx_enabled(state): curr_state 'XXX tentative name
+PUB mac_rx_ena(state): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -507,33 +510,32 @@ PUB mac_rx_enabled(state): curr_state 'XXX tentative name
     state := ((curr_state & core#MARXEN_MASK) | state)
     writereg(core#MACON1, 1, @state)
 
-PUB max_frame_len(len): curr_len
-' Set maximum frame length
-'   Valid values: 0..65535
-'   Any other value polls the chip and returns the current setting
-    case len
-        0..65535:
-            writereg(core#MAMXFLL, 2, @len)
-        other:
-            curr_len := 0
-            readreg(core#MAMXFLL, 2, @curr_len)
-            return curr_len
+PUB max_frame_len{}: curr_len
+' Get maximum frame length
+    curr_len := 0
+    readreg(core#MAMXFLL, 2, @curr_len)
 
-PUB max_retransmits(max_nr): curr_max
+PUB set_max_frame_len(len)
+' Set maximum frame length
+'   Valid values: 0..65535 (clamped to range)
+    len := 0 #> len <# 65535
+    writereg(core#MAMXFLL, 2, @len)
+
+PUB max_retransmits{}: curr_max
+' Get maximum number of retransmissions
+    curr_max := 0
+    readreg(core#MACLCON1, 1, @curr_max)
+
+PUB set_max_retransmits(max_nr)
 ' Set maximum number of retransmissions
-'   Valid values: 0..15 (default: 15)
-'   Any other value polls the chip and returns the current setting
-'   NOTE: Applies only when FullDuplex() == 0
-    case max_nr
-        0..15:
-            writereg(core#MACLCON1, 1, @max_nr)
-        other:
-            curr_max := 0
-            readreg(core#MACLCON1, 1, @curr_max)
+'   Valid values: 0..15 (clamped to range; default: 15)
+'   NOTE: Applies only when full_duplex_ena() == 0
+    max_nr := 0 #> max_nr <# 15
+    writereg(core#MACLCON1, 1, @max_nr)
 
 PUB node_address(ptr_addr)
 ' Set this node's MAC address
-'   Valid values: pointer to six 8-bit values
+'   Valid values: pointer to 6-byte MAC address (OUI in MSB)
     writereg(core#MAADR1, 1, ptr_addr+5)        '
     writereg(core#MAADR2, 1, ptr_addr+4)        ' OUI
     writereg(core#MAADR3, 1, ptr_addr+3)        '
@@ -541,7 +543,7 @@ PUB node_address(ptr_addr)
     writereg(core#MAADR5, 1, ptr_addr+1)
     writereg(core#MAADR6, 1, ptr_addr)
 
-PUB phy_full_duplex(state): curr_state    'XXX tentatively named
+PUB phy_full_duplex_ena(state): curr_state    'XXX tentatively named
 ' Set PHY to full-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -634,7 +636,7 @@ PUB phy_link_state{}: state    'XXX tentatively named
     readreg(core#PHSTAT2, 1, @state)
     return ((state >> core#LSTAT) & 1)
 
-PUB phy_loopback(state): curr_state    'XXX tentatively named
+PUB phy_loopback_ena(state): curr_state    'XXX tentatively named
 ' Loop-back all data transmitted and disable interface to twisted-pair
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -768,36 +770,38 @@ PUB set_pkt_filter(mask)  'XXX tentative name and interface
     writereg(core#ERXFCON, 1, @mask)
 
 PUB rdblk_lsbf(ptr_buff, len): ptr
-
+' Read a block of data from the FIFO, LSByte-first
+'   len: number of bytes to read
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     spi.rdblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
     outa[_CS] := 1
 
 PUB rdblk_msbf(ptr_buff, len): ptr | i
-
+' Read a block of data from the FIFO, MSByte-first
+'   len: number of bytes to read
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     repeat i from (1 #> len <# FIFO_MAX)-1 to 0
-        byte[ptr_buff][i] := spi.rd_byte{}'spi.rdblock_msbf(ptr_buff, len)
+        byte[ptr_buff][i] := spi.rd_byte{}
     outa[_CS] := 1
 
 PUB rd_byte{}: b
-
+' Read a byte of data from the FIFO
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     b := spi.rd_byte{}
     outa[_CS] := 1
 
 PUB rdlong_lsbf{}: l
-
+' Read a long of data from the FIFO, LSByte-first
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     l := spi.rdlong_lsbf{}
     outa[_CS] := 1
 
 PUB rdlong_msbf{}: l | i
-
+' Read a long of data from the FIFO, MSByte-first
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     repeat i from 3 to 0
@@ -805,17 +809,16 @@ PUB rdlong_msbf{}: l | i
     outa[_CS] := 1
 
 PUB rdword_lsbf{}: w
-
+' Read a word of data from the FIFO, LSByte-first
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     w := spi.rdword_lsbf{}
     outa[_CS] := 1
 
 PUB rdword_msbf{}: w
-
+' Read a word of data from the FIFO, MSByte-first
     outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
-'    w := spi.rdword_msbf{}
     w.byte[1] := spi.rd_byte{}
     w.byte[0] := spi.rd_byte{}
     outa[_CS] := 1
@@ -835,7 +838,8 @@ PUB rx_busy{}: flag
     readreg(core#ESTAT, 1, @flag)
     return ((flag & core#RXBUSY_BITS) <> 0)
 
-PUB rx_enabled(state)
+PUB rx_enabled = rx_ena
+PUB rx_ena(state)
 ' Enable reception of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
     if (state)
@@ -843,14 +847,14 @@ PUB rx_enabled(state)
     else
         regbits_clr(core#ECON1, core#RXEN_BITS)
 
-PUB is_rx_enabled{}: rxen
+PUB rx_is_ena{}: rxen
 ' Flag indicating reception of packets is enabled
 '   Returns: TRUE (-1) or FALSE
     rxen := 0
     readreg(core#ECON1, 1, @rxen)
     return (((rxen >> core#RXEN) & 1) == 1)
 
-PUB rx_flow_ctrl(state): curr_state   'XXX tentatively named
+PUB rx_flow_ctrl_ena(state): curr_state   'XXX tentatively named
 ' Enable receive flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -875,14 +879,14 @@ PUB rx_payload(ptr_buff, nr_bytes)
     spi.rdblock_lsbf(ptr_buff, 1 #> nr_bytes)
     outa[_CS] := 1
 
-PUB tx_defer(state): curr_state  'XXX tentatively named
+PUB tx_defer_ena(state): curr_state  'XXX tentatively named
 ' Defer transmission
 '   Valid values:
 '       TRUE (-1 or 1): MAC waits indefinitely for medium to become free
 '           if it's occupied (when attempting to transmit)
 '       FALSE (0): MAC aborts transmission after deferral limit reached
 '   Any other value polls the chip and returns the current setting
-'   NOTE: Applies _only_ when full_duplex() == FALSE
+'   NOTE: Applies _only_ when full_duplex_ena() == FALSE
 '   NOTE: Set to TRUE for IEEE 802.3 compliance
     curr_state := 0
     readreg(core#MACON4, 1, @curr_state)
@@ -895,7 +899,8 @@ PUB tx_defer(state): curr_state  'XXX tentatively named
     state := ((curr_state & core#DEFER_MASK) | state)
     writereg(core#MACON4, 1, @state)
 
-PUB tx_enabled(state): curr_state | checked
+PUB tx_enabled = tx_ena
+PUB tx_ena(state): curr_state | checked
 ' Enable transmission of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -919,7 +924,7 @@ PUB tx_enabled(state): curr_state | checked
             return (((curr_state >> core#TXRTS) & 1) == 1)
     regbits_clr(core#ECON1, core#TXRTS_BITS)
 
-PUB tx_flow_ctrl(state): curr_state   'XXX tentatively named
+PUB tx_flow_ctrl_ena(state): curr_state   'XXX tentatively named
 ' Enable transmit flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -945,23 +950,26 @@ PUB tx_payload(ptr_buff, nr_bytes)
     outa[_CS] := 1
 
 PUB wrblk_lsbf(ptr_buff, len): ptr
-
+' Write a block of data to the FIFO, LSByte-first
+'   ptr_buff: pointer to buffer of data to copy from
+'   len: number of bytes to write
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wrblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
     outa[_CS] := 1
 
 PUB wrblk_msbf(ptr_buff, len): ptr | i
-
+' Write a block of data to the FIFO, MSByte-first
+'   ptr_buff: pointer to buffer of data to copy from
+'   len: number of bytes to write
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
-'    spi.wrblock_msbf(ptr_buff, len)
     repeat i from len-1 to 0
         spi.wr_byte(byte[ptr_buff][i])
     outa[_CS] := 1
 
 PUB wr_byte(b): len
-
+' Write a byte of data to the FIFO
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wr_byte(b)
@@ -969,7 +977,9 @@ PUB wr_byte(b): len
     return 1
 
 PUB wr_byte_x(b, nr_bytes): len
-
+' Repeatedly write a byte to the FIFO
+'   b: byte to write
+'   nr_bytes: number of times to write byte to the FIFO
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     repeat nr_bytes
@@ -978,7 +988,7 @@ PUB wr_byte_x(b, nr_bytes): len
     return nr_bytes
 
 PUB wrlong_lsbf(l): len
-
+' Write a long of data to the FIFO, LSByte-first
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wrlong_lsbf(l)
@@ -986,17 +996,16 @@ PUB wrlong_lsbf(l): len
     return 4
 
 PUB wrlong_msbf(l): len | i
-
+' Write a long of data to the FIFO, MSByte-first
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
-'    spi.wrlong_msbf(l)
     repeat i from 3 to 0
         spi.wr_byte(l.byte[i])
     outa[_CS] := 1
     return 4
 
 PUB wrword_lsbf(w): len
-
+' Write a word of data to the FIFO, LSByte-first
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wrword_lsbf(w)
@@ -1004,10 +1013,9 @@ PUB wrword_lsbf(w): len
     return 2
 
 PUB wrword_msbf(w): len
-
+' Write a word of data to the FIFO, MSByte-first
     outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
-'    spi.wrword_msbf(w)
     spi.wr_byte(w.byte[1])
     spi.wr_byte(w.byte[0])
     outa[_CS] := 1
