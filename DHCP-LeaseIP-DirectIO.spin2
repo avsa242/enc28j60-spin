@@ -1,16 +1,16 @@
 {
     --------------------------------------------
     Filename: DHCP-LeaseIP-DirectIO.spin2
-    Author: Jesse Burt
     Description: Demo using the ENC28J60 driver and preliminary network protocols
         * attempts to lease an IP address using DHCP from a remote server
         * requests 2 minute lease (what it gets may depend on your network)
         * renews the IP lease when it expires
         * responds to ICMP Echo requests (ping)
         * assembles frames directly on the chip
-    Copyright (c) 2022
+    Author: Jesse Burt
+    Copyright (c) 2023
     Started Sep 10, 2022
-    Updated Oct 16, 2022
+    Updated Jan 10, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -27,7 +27,7 @@ CON
     LED         = cfg.LED1
 
 { SPI configuration }
-    CLICK_BASE  = 16
+    CLICK_BASE  = 0
     SCK_FREQ    = 10_000_000                    ' 20MHz max (req's higher Fsys)
 
 { define these instead if the Click adaptor board isn't used }
@@ -270,6 +270,7 @@ PUB ipv4_reply(): pos
 ' Set up/write IPv4 header as a reply to last received header
     net.ip_set_hdr_chk(0)                         ' init header checksum to 0
     ipv4_new(net.ip_l4_proto(), _my_ip, net.ip_src_addr())
+    ser.printf(@"ipv4_reply(): net.fifo_wr_ptr = %04.4x\n\r", net.fifo_wr_ptr())
     return net.fifo_wr_ptr()
 
 PUB ipv4_updchksum(length) | ptr_tmp
@@ -330,7 +331,7 @@ PUB process_icmp() | icmp_st, frm_end, icmp_end, icmpchk
             if ( (_dhcp_state >= BOUND) and (net.ip_dest_addr() == _my_ip) )
                 start_frame()
                 ethii_reply()
-                icmp_st := ipv4_reply()
+                icmp_st := ipv4_reply()-TXSTART
 
                 net.icmp_set_chksum(0)
                 net.icmp_set_msg_type(net.ECHO_REPL)
@@ -343,16 +344,27 @@ PUB process_icmp() | icmp_st, frm_end, icmp_end, icmpchk
 
                 ipv4_updchksum(net.ip_hdr_len() + net.icmp_msg_len() + ICMP_DAT_LEN)
 
-                icmp_end := icmp_st + net.icmp_msg_len + ICMP_DAT_LEN
-
-                { update ICMP checksum }    'XXX not functional
-                icmpchk := net.inet_chksum(icmp_st, icmp_end, icmp_st+net.ICMP_CKSUM)
+                icmp_end := icmp_st + net.icmp_msg_len + ICMP_DAT_LEN-1
+                dump_frame()
+                { update ICMP checksum }    'XXX calculates, but byte order reversed? why? ip works
+                icmpchk := net.inet_chksum(icmp_st, icmp_end, icmp_st+net#ICMP_CKSUM-1)
+                ser.printf(@"DBG: icmpchk: %04.4x\n\r", icmpchk)
                 net.fifo_set_wr_ptr(frm_end)
 
                 send_frame()
                 ser.fgcolor(ser#GREEN)
                 ser.strln(@"PING!")
                 ser.fgcolor(ser#GREY)
+
+var byte _frame[1500]
+pub dump_frame() | i
+
+    net.fifo_set_rd_ptr(TXSTART)
+    i := 0
+    repeat i from 0 to 99
+        _frame[i] := net.rd_byte()
+    ser.hexdump(@_frame+1, 0, 4, 99, 16) ' skip over per-packet control byte
+'    ser.hexdump(@_frame+1, 6667, 4, 99, 16) ' skip over per-packet control byte
 
 PUB process_ipv4(): msg
 ' Process IPv4 datagrams

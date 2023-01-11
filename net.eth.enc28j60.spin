@@ -3,9 +3,9 @@
     Filename: net.eth.enc28j60.spin
     Author: Jesse Burt
     Description: Driver for the ENC28J60 Ethernet Transceiver
-    Copyright (c) 2022
+    Copyright (c) 232
     Started Feb 21, 2022
-    Updated Nov 13, 2022
+    Updated Jan 10, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -401,18 +401,22 @@ PUB hdx_loopback_ena(state): curr_state
     state := ((curr_state & core#HDLDIS_MASK) | state)
     writereg(core#PHCON2, 1, @state)
 
-PUB inet_chksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
+PUB inet_chksum(ck_st, ck_end, ck_dest): chk
 ' Calculate checksum of frame in buffer and store the result
 '   ck_st: start of frame data to checksum
 '   ck_end: end of frame data to checksum
 '   ck_dest: location in frame data to write checksum to
+'   NOTE: positions are relative to the start of the frame (0), not absolute positions
+'       within the FIFO
+'   Returns: calculated checksum
+    { convert given packet offsets to absolute FIFO positions }
     ck_st += TXSTART+1
     ck_end += TXSTART
+    ck_dest += TXSTART+1
 
+    { tell the DMA engine where to find the data to perform the checksum on }
     writereg(core#EDMASTL, 2, @ck_st)
     writereg(core#EDMANDL, 2, @ck_end)
-    readreg(core#EDMASTL, 2, @st)
-    readreg(core#EDMANDL, 2, @nd)
 
     { ERRATA #15: Wait for receive to finish }
     repeat while rx_busy{}
@@ -421,13 +425,11 @@ PUB inet_chksum(ck_st, ck_end, ck_dest): chk | st, nd, ck
 
     repeat until dma_ready{}
 
-    ck_end := ck_dest + TXSTART+1
-
+    { get the checksum from the chip and write it back to the buffer }
+    'XXX is there a way to get the ENC to just copy it using DMA? this seems silly
     chk := 0
     readreg(core#EDMACSL, 2, @chk)
-
-    fifo_set_wr_ptr(ck_end)
-
+    fifo_set_wr_ptr(ck_dest)
     wrword_msbf(chk)
 
 PUB int_clear(mask)
@@ -1127,18 +1129,18 @@ PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
             byte[ptr_buff][1] := spi.rd_byte{}
             outa[_CS] := 1
 
-PRI regbits_clr(reg_nr, field)
-' Clear bitfield 'field' in Ethernet reg_nrister 'reg_nr'
+PRI regbits_clr(reg_nr, field_nr)
+' Clear bitfield 'field_nr' in Ethernet register 'reg_nr'
     outa[_CS] := 0
     spi.wr_byte(core#BFC | reg_nr)
-    spi.wr_byte(field)
+    spi.wr_byte(field_nr)
     outa[_CS] := 1
 
-PRI regbits_set(reg_nr, field)
-' Set bitfield 'field' in Ethernet reg_nrister 'reg_nr'
+PRI regbits_set(reg_nr, field_nr)
+' Set bitfield 'field_nr' in Ethernet register 'reg_nr'
     outa[_CS] := 0
     spi.wr_byte(core#BFS | reg_nr)
-    spi.wr_byte(field)
+    spi.wr_byte(field_nr)
     outa[_CS] := 1
 
 PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
