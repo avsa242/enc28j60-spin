@@ -342,7 +342,7 @@ PUB process_icmp{} | icmp_st, frm_end, icmp_end
                 ipv4_updchksum(net.ip_hdr_len{} + net.icmp_msg_len{} + ICMP_DAT_LEN)
 
                 icmp_end := net.fifo_wr_ptr{}-TXSTART
-                { update ICMP checksum }    'XXX calculates, but byte order reversed? why? ip works
+                { update ICMP checksum }
                 net.inet_chksum(icmp_st, icmp_end, icmp_st+net#ICMP_CKSUM)
                 net.fifo_set_wr_ptr(frm_end)
 
