@@ -7,7 +7,7 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 driver object for the ENC28J6
 
 ## Salient Features
 
-* SPI connection at 20MHz W/10MHz R (P1)
+* SPI connection at 20MHz W/10MHz R (P1), up to 20MHz (P2)
 * Half and Full-duplex operation
 * FIFO control: auto-increment pointer, manually set read and write pointers, set read and write regions within FIFO
 * Frame control: Optional frame padding (none, 60, 64 bytes), maximum frame length
@@ -22,20 +22,24 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 driver object for the ENC28J6
 
 P1/SPIN1:
 * spin-standard-library
+* [network-spin](https://github.com/avsa242/network-spin) - Networking protocols objects/headers
 
-~~P2/SPIN2:~~
-* ~~p2-spin-standard-library~~
+P2/SPIN2:
+* p2-spin-standard-library
+* [network-spin](https://github.com/avsa242/network-spin) - Networking protocols objects/headers
 
 ## Compiler Compatibility
 
-* P1/SPIN1 OpenSpin (bytecode): Untested (deprecated)
-* P1/SPIN1 FlexSpin (bytecode): OK, tested with 5.9.9-beta
-* P1/SPIN1 FlexSpin (native): OK, tested with 5.9.9-beta
-* ~~P2/SPIN2 FlexSpin (nu-code):~~ _(not yet implemented)_
-* ~~P2/SPIN2 FlexSpin (native):~~ _(not yet implemented)_
-* ~~BST~~ (incompatible - no preprocessor)
-* ~~Propeller Tool~~ (incompatible - no preprocessor)
-* ~~PNut~~ (incompatible - no preprocessor)
+| Processor | Language | Compiler               | Backend     | Status                |
+|-----------|----------|------------------------|-------------|-----------------------|
+| P1        | SPIN1    | FlexSpin (5.9.14-beta) | Bytecode    | OK                    |
+| P1        | SPIN1    | FlexSpin (5.9.14-beta) | Native code | OK                    |
+| P1        | SPIN1    | OpenSpin (1.00.81)     | Bytecode    | Untested (deprecated) |
+| P2        | SPIN2    | FlexSpin (5.9.14-beta) | NuCode      | Untested              |
+| P2        | SPIN2    | FlexSpin (5.9.14-beta) | Native code | Not yet implemented   |
+| P1        | SPIN1    | Brad's Spin Tool (any) | Bytecode    | Unsupported           |
+| P1, P2    | SPIN1, 2 | Propeller Tool (any)   | Bytecode    | Unsupported           |
+| P1, P2    | SPIN1, 2 | PNut (any)             | Bytecode    | Unsupported           |
 
 ## Limitations
 
