@@ -10,7 +10,7 @@
     Author: Jesse Burt
     Copyright (c) 2023
     Started Feb 21, 2022
-    Updated Jan 11, 2023
+    Updated Jan 15, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -179,15 +179,7 @@ PUB arp_reply{}
 ' Construct ARP reply message
     start_frame{}
     ethii_reply{}
-    { change only the settings that differ from the request }
-    net.arp_set_opcode(net#ARP_REPL)
-    net.arp_set_target_hw_addr(net.arp_sender_hw_addr{})
-    net.arp_set_target_proto_addr(net.arp_sender_proto_addr{})
-    net.arp_set_sender_proto_addr(_my_ip)
-    { /\- is at -\/ }
-    net.arp_set_sender_hw_addr(@_mac_local)
-
-    net.wr_arp_msg{}
+    net.arp_reply{}
     send_frame{}
 
 PUB dhcp_msg(msg_t) | tmp
@@ -291,6 +283,10 @@ PUB process_arp{} | opcode
         { if we're currently bound to an IP, and the ARP request is for
             our IP, send a reply confirming we have it }
         if ( (_dhcp_state => BOUND) and (net.arp_target_proto_addr{} == _my_ip) )
+            show_ip_addr(@"t: ", net.arp_target_proto_addr(), string(10, 13))
+            show_mac_addr(@"t: ", net.arp_target_hw_addr(), string(10, 13))
+            show_ip_addr(@"s: ", net.arp_sender_proto_addr(), string(10, 13))
+            show_mac_addr(@"s: ", net.arp_sender_hw_addr(), string(10, 13))
             arp_reply{}
             show_arp_msg(net.arp_opcode{})
 

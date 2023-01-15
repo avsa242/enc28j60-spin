@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 232
     Started Feb 21, 2022
-    Updated Jan 10, 2023
+    Updated Jan 15, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -44,6 +44,7 @@ VAR
 
     long _CS
     long _curr_bank
+    byte _mac_local[MACADDR_LEN]
 
 OBJ
 
@@ -538,6 +539,7 @@ PUB set_max_retransmits(max_nr)
 PUB node_address(ptr_addr)
 ' Set this node's MAC address
 '   Valid values: pointer to 6-byte MAC address (OUI in MSB)
+    bytemove(@_mac_local, ptr_addr, MACADDR_LEN)
     writereg(core#MAADR1, 1, ptr_addr+5)        '
     writereg(core#MAADR2, 1, ptr_addr+4)        ' OUI
     writereg(core#MAADR3, 1, ptr_addr+3)        '
