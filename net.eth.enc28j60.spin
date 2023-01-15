@@ -19,6 +19,7 @@
 CON
 
     FIFO_MAX    = 8192-1
+    MTU_MAX     = 1518
 
 { FramePadding() options }
     VLAN        = %101

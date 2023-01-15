@@ -46,8 +46,7 @@ CON
 ' --
 
     { ENC28J60 FIFO }
-    MTU_MAX     = 1518
-    TXBUFFSZ    = MTU_MAX
+    TXBUFFSZ    = net.MTU_MAX
     RXSTART     = 0
     RXSTOP      = (TXSTART - 2) | 1
     TXSTART     = 8192 - (TXBUFFSZ + 8)
@@ -193,14 +192,7 @@ PUB dhcp_msg(msg_t) | tmp
     ipv4_new(net.UDP, $00_00_00_00, BCAST_IP)
     udp_new(svc.BOOTP_C, svc.BOOTP_S)
 
-    net.bootp_set_opcode(net.BOOT_REQ)
-    net.bootp_set_bcast_flag(true)
-    net.bootp_set_client_mac(@_mac_local)
-    net.dhcp_set_params_reqd(@_dhcp_params, 5)
-    net.dhcp_set_max_msg_len(MTU_MAX)
-    net.dhcp_set_ip_lease_time(120)                ' 2min
-    net.dhcp_set_msg_type(msg_t)
-    net.wr_dhcp_msg()
+    net.dhcp_new(msg_t, @_dhcp_params, 5)
 
     { update UDP header with length: UDP header + DHCP message }
     tmp := net.fifo_wr_ptr()
@@ -235,7 +227,7 @@ PUB get_frame() | rdptr
     net.rx_payload(@_nxtpkt, 6)
 
     { reject oversized packets }
-    ifnot (_rxlen <= MTU_MAX)
+    ifnot (_rxlen <= net.MTU_MAX)
         ser.strln(@"[OVERSIZED]")
 
     { ERRATA: read pointer start must be odd; subtract 1 }
