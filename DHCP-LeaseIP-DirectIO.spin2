@@ -188,7 +188,7 @@ PUB dhcp_msg(msg_t) | tmp
     tmp := 0
 
     start_frame()
-    ethii_new(@_mac_local, @_mac_bcast, ETYP_IPV4)
+    net.ethii_new(@_mac_local, @_mac_bcast, ETYP_IPV4)
     _ip_st := net.fifo_wr_ptr()
     net.ipv4_new(net.UDP, $00_00_00_00, BCAST_IP)
     _udp_st := net.fifo_wr_ptr{}
@@ -208,13 +208,6 @@ PUB dhcp_msg(msg_t) | tmp
     send_frame()
 
     _timer_set := (_dly + (math.rndi(2)-1)) <# 64 ' start counting down
-
-PUB ethii_new(mac_src, mac_dest, ether_t)
-' Start new ethernet-II frame
-    net.ethii_set_dest_addr(mac_dest)
-    net.ethii_set_src_addr(mac_src)
-    net.ethii_set_ethertype(ether_t)
-    net.wr_ethii_frame()
 
 PUB ethii_reply(): pos
 ' Set up/write Ethernet II frame as a reply to last received frame
@@ -320,6 +313,7 @@ PUB process_icmp() | icmp_st, frm_end, icmp_end
                 frm_end := net.fifo_wr_ptr()
 
                 ipv4_updchksum(net.ip_hdr_len() + net.icmp_msg_len() + ICMP_DAT_LEN)
+
                 icmp_end := net.fifo_wr_ptr()-TXSTART
 
                 { update ICMP checksum }
