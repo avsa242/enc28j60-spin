@@ -187,7 +187,8 @@ PUB dhcp_msg(msg_t) | tmp
 
     start_frame{}
     ethii_new(@_mac_local, @_mac_bcast, ETYP_IPV4)
-    ipv4_new(net#UDP, $00_00_00_00, BCAST_IP)
+    _ip_st := net.fifo_wr_ptr{}
+    net.ipv4_new(net#UDP, $00_00_00_00, BCAST_IP)
     udp_new(svc#BOOTP_C, svc#BOOTP_S)
 
     net.dhcp_new(msg_t, @_dhcp_params, 5)
@@ -238,20 +239,11 @@ PUB get_frame{} | rdptr
 
     net.fifo_set_rx_rd_ptr(rdptr)
 
-PUB ipv4_new(l4_proto, src_ip, dest_ip)
-' Construct an IPV4 header
-'   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
-    _ip_st := net.fifo_wr_ptr{}                     ' mark start of IPV4 data
-    net.reset_ipv4{}
-    net.ip_set_l4_proto(l4_proto)
-    net.ip_set_src_addr(src_ip)
-    net.ip_set_dest_addr(dest_ip)
-    net.wr_ip_header{}
-
 PUB ipv4_reply{}: pos
 ' Set up/write IPv4 header as a reply to last received header
     net.ip_set_hdr_chk(0)                         ' init header checksum to 0
-    ipv4_new(net.ip_l4_proto{}, _my_ip, net.ip_src_addr{})
+    _ip_st := net.fifo_wr_ptr{}
+    net.ipv4_new(net.ip_l4_proto{}, _my_ip, net.ip_src_addr{})
     return net.fifo_wr_ptr{}
 
 PUB ipv4_updchksum(length) | ptr_tmp
@@ -275,10 +267,6 @@ PUB process_arp{} | opcode
         { if we're currently bound to an IP, and the ARP request is for
             our IP, send a reply confirming we have it }
         if ( (_dhcp_state => BOUND) and (net.arp_target_proto_addr{} == _my_ip) )
-            show_ip_addr(@"t: ", net.arp_target_proto_addr(), string(10, 13))
-            show_mac_addr(@"t: ", net.arp_target_hw_addr(), string(10, 13))
-            show_ip_addr(@"s: ", net.arp_sender_proto_addr(), string(10, 13))
-            show_mac_addr(@"s: ", net.arp_sender_hw_addr(), string(10, 13))
             arp_reply{}
             show_arp_msg(net.arp_opcode{})
 
