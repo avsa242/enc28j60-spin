@@ -177,7 +177,7 @@ PUB main{}
 PUB arp_reply{}
 ' Construct ARP reply message
     start_frame{}
-    ethii_reply{}
+    net.ethii_reply{}
     net.arp_reply{}
     send_frame{}
 
@@ -206,13 +206,6 @@ PUB dhcp_msg(msg_t) | tmp
     send_frame{}
 
     _timer_set := (_dly + (math.rndi(2)-1)) <# 64 ' start counting down
-
-PUB ethii_reply{}: pos
-' Set up/write Ethernet II frame as a reply to last received frame
-    net.ethii_set_dest_addr(net.ethii_src_addr{})
-    net.ethii_set_src_addr(@_mac_local)
-    net.wr_ethii_frame{}
-    return net.fifo_wr_ptr{}
 
 PUB get_frame{} | rdptr
 ' Receive frame from ethernet device
@@ -298,7 +291,7 @@ PUB process_icmp{} | icmp_st, frm_end, icmp_end
             net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
             if ( (_dhcp_state => BOUND) and (net.ip_dest_addr{} == _my_ip) )
                 start_frame{}
-                ethii_reply{}
+                net.ethii_reply{}
                 icmp_st := ipv4_reply{}-TXSTART-1
 
                 net.icmp_set_chksum(0)
