@@ -189,8 +189,10 @@ PUB dhcp_msg(msg_t) | tmp
     ethii_new(@_mac_local, @_mac_bcast, ETYP_IPV4)
     _ip_st := net.fifo_wr_ptr{}
     net.ipv4_new(net#UDP, $00_00_00_00, BCAST_IP)
-    udp_new(svc#BOOTP_C, svc#BOOTP_S)
+    _udp_st := net.fifo_wr_ptr{}
+    net.udp_new(svc#BOOTP_C, svc#BOOTP_S)
 
+    net.dhcp_set_ip_lease_time(120)
     net.dhcp_new(msg_t, @_dhcp_params, 5)
 
     { update UDP header with length: UDP header + DHCP message }
@@ -398,14 +400,6 @@ PUB start_frame{}
 ' Reset pointers, and add control byte to frame
     net.fifo_set_wr_ptr(TXSTART)
     net.wr_byte($00)                            ' per-frame control byte
-
-PUB udp_new(src_p, dest_p)
-' Construct a UDP header
-    _udp_st := net.fifo_wr_ptr{}
-    net.reset_udp{}
-    net.udp_set_src_port(src_p)
-    net.udp_set_dest_port(dest_p)
-    net.wr_udp_header{}
 
 PRI cog_timer{}
 
