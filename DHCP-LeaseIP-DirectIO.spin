@@ -174,13 +174,6 @@ PUB main{}
                     get_frame{}
                     process_ethii{}
 
-PUB arp_reply{}
-' Construct ARP reply message
-    start_frame{}
-    net.ethii_reply{}
-    net.arp_reply{}
-    send_frame{}
-
 PUB dhcp_msg(msg_t) | tmp
 ' Construct a DHCP message, and transmit it
     tmp := 0
@@ -242,8 +235,7 @@ PUB ipv4_updchksum(length) | ptr_tmp
     net.ip_set_dgram_len(length)
     net.fifo_set_wr_ptr(_ip_st + net#IP_TLEN)
     net.wrword_msbf(net.ip_dgram_len{})
-    net.inet_chksum(net#IP_ABS_ST, net#IP_ABS_ST+net#IP_HDR_SZ, {
-}   net#IP_ABS_ST+net#IP_CKSUM)
+    net.inet_chksum(net#IP_ABS_ST, net#IP_ABS_ST+net#IP_HDR_SZ, net#IP_ABS_ST+net#IP_CKSUM)
 
     net.fifo_set_wr_ptr(ptr_tmp)                         ' restore pointer pos
 
@@ -255,7 +247,11 @@ PUB process_arp{} | opcode
         { if we're currently bound to an IP, and the ARP request is for
             our IP, send a reply confirming we have it }
         if ( (_dhcp_state => BOUND) and (net.arp_target_proto_addr{} == _my_ip) )
-            arp_reply{}
+            { reply }
+            start_frame{}
+            net.ethii_reply{}
+            net.arp_reply{}
+            send_frame{}
             show_arp_msg(net.arp_opcode{})
 
 PUB process_bootp{}
@@ -285,36 +281,32 @@ PUB process_icmp{} | icmp_st, frm_end, icmp_end
     { if this node is bound to an IP and the echo request was directed to it, }
     {   send a reply }
     net.rd_icmp_msg{}
-    case net.icmp_msg_type{}
-        net#ECHO_REQ:
+    if ( net.icmp_msg_type{} == net#ECHO_REQ )
         { ECHO request (ping) }
-            net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
-            if ( (_dhcp_state => BOUND) and (net.ip_dest_addr{} == _my_ip) )
-                start_frame{}
-                net.ethii_reply{}
-                icmp_st := ipv4_reply{}-TXSTART-1
+        net.rdblk_lsbf(@_icmp_data, ICMP_DAT_LEN)     ' read in the echo data
+        if ( (_dhcp_state => BOUND) and (net.ip_dest_addr{} == _my_ip) )
+            start_frame{}
+            net.ethii_reply{}
+            icmp_st := ipv4_reply{}-TXSTART-1
 
-                net.icmp_set_chksum(0)
-                net.icmp_set_msg_type(net#ECHO_REPL)
-                net.icmp_set_seq_nr(net.icmp_seq_nr{})
-                net.wr_icmp_msg{}
+            net.icmp_echo_reply{}
 
-                { echo the data that was received in the ping/echo request }
-                net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
-                frm_end := net.fifo_wr_ptr{}
+            { echo the data that was received in the ping/echo request }
+            net.wrblk_lsbf(@_icmp_data, ICMP_DAT_LEN)
+            frm_end := net.fifo_wr_ptr{}
 
-                ipv4_updchksum(net.ip_hdr_len{} + net.icmp_msg_len{} + ICMP_DAT_LEN)
+            ipv4_updchksum(net.ip_hdr_len{} + net.icmp_msg_len{} + ICMP_DAT_LEN)
 
-                icmp_end := net.fifo_wr_ptr{}-TXSTART
+            icmp_end := net.fifo_wr_ptr{}-TXSTART
 
-                { update ICMP checksum }
-                net.inet_chksum(icmp_st, icmp_end, icmp_st+net#ICMP_CKSUM)
-                net.fifo_set_wr_ptr(frm_end)
+            { update ICMP checksum }
+            net.inet_chksum(icmp_st, icmp_end, icmp_st+net#ICMP_CKSUM)
+            net.fifo_set_wr_ptr(frm_end)
 
-                send_frame{}
-                ser.fgcolor(ser#GREEN)
-                ser.strln(@"PING!")
-                ser.fgcolor(ser#GREY)
+            send_frame{}
+            ser.fgcolor(ser#GREEN)
+            ser.strln(@"PING!")
+            ser.fgcolor(ser#GREY)
 
 PUB process_ipv4{}: msg
 ' Process IPv4 datagrams
@@ -418,7 +410,7 @@ PUB setup{}
 
 DAT
 {
-Copyright 2022 Jesse Burt
+Copyright 2023 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
