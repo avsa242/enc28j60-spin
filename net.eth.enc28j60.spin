@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 232
     Started Feb 21, 2022
-    Updated Jan 15, 2023
+    Updated Feb 14, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -962,6 +962,7 @@ PUB wrblk_lsbf(ptr_buff, len): ptr
     spi.wr_byte(core#WR_BUFF)
     spi.wrblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
     outa[_CS] := 1
+    return len
 
 PUB wrblk_msbf(ptr_buff, len): ptr | i
 ' Write a block of data to the FIFO, MSByte-first
@@ -972,6 +973,7 @@ PUB wrblk_msbf(ptr_buff, len): ptr | i
     repeat i from len-1 to 0
         spi.wr_byte(byte[ptr_buff][i])
     outa[_CS] := 1
+    return len
 
 PUB wr_byte(b): len
 ' Write a byte of data to the FIFO
