@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 232
     Started Feb 21, 2022
-    Updated Feb 14, 2023
+    Updated Mar 10, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -883,6 +883,19 @@ PUB rx_payload(ptr_buff, nr_bytes)
     spi.wr_byte(core#RD_BUFF)
     spi.rdblock_lsbf(ptr_buff, 1 #> nr_bytes)
     outa[_CS] := 1
+
+PUB send_frame{}
+' Send assembled ethernet frame
+    { point to assembled ethernet frame and send it }
+    fifo_set_tx_start(TXSTART)              ' ETXSTL: TXSTART
+    fifo_set_tx_end(fifo_wr_ptr{})          ' ETXNDL: TXSTART+len
+    tx_enabled(true)                        ' send
+
+PUB start_frame{}: p
+' Reset pointers, and add control byte to frame
+    fifo_set_wr_ptr(TXSTART)
+    wr_byte($00)                                ' per-frame control byte
+    return fifo_wr_ptr{}
 
 PUB tx_defer_ena(state): curr_state  'XXX tentatively named
 ' Defer transmission
