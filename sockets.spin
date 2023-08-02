@@ -27,6 +27,7 @@ VAR
     word remote_port[NR_SOCKETS]
     word state[NR_SOCKETS]
     word local_port[NR_SOCKETS]
+    word send_window[NR_SOCKETS]
 
 PUB null()
 ' This is not a top-level object
