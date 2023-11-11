@@ -17,33 +17,35 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 driver object for the ENC28J6
 * PHY control: LED modes, hysteresis, loopback
 * Packet filtering: unicast, CRC check, pattern match, magic packet, hash table, multicast, broadcast
 * Flow control: TX, RX
+* Checksum offload
+* Demo code utilises [network-spin](https://github.com/avsa242/network-spin) - WIP Networking protocols objects
+
 
 ## Requirements
 
 P1/SPIN1:
 * spin-standard-library
-* [network-spin](https://github.com/avsa242/network-spin) - Networking protocols objects/headers
+* 1 extra core/cog for the PASM-based SPI engine
 
 P2/SPIN2:
 * p2-spin-standard-library
-* [network-spin](https://github.com/avsa242/network-spin) - Networking protocols objects/headers
+
 
 ## Compiler Compatibility
 
-| Processor | Language | Compiler               | Backend     | Status                |
-|-----------|----------|------------------------|-------------|-----------------------|
-| P1        | SPIN1    | FlexSpin (5.9.25-beta) | Bytecode    | OK                    |
-| P1        | SPIN1    | FlexSpin (5.9.25-beta) | Native code | OK                    |
-| P1        | SPIN1    | OpenSpin (1.00.81)     | Bytecode    | Untested (deprecated) |
-| P2        | SPIN2    | FlexSpin (5.9.25-beta) | NuCode      | Untested              |
-| P2        | SPIN2    | FlexSpin (5.9.25-beta) | Native code | FTBFS                 |
-| P1        | SPIN1    | Brad's Spin Tool (any) | Bytecode    | Unsupported           |
-| P1, P2    | SPIN1, 2 | Propeller Tool (any)   | Bytecode    | Unsupported           |
-| P1, P2    | SPIN1, 2 | PNut (any)             | Bytecode    | Unsupported           |
+| Processor | Language | Compiler         | Backend     | Status                |
+|-----------|----------|------------------|-------------|-----------------------|
+| P1        | SPIN1    | FlexSpin (6.5.0) | Bytecode    | OK                    |
+| P1        | SPIN1    | FlexSpin (6.5.0) | Native code | OK                    |
+| P2        | SPIN2    | FlexSpin (6.5.0) | NuCode      | Untested              |
+| P2        | SPIN2    | FlexSpin (6.5.0) | Native code | OK                    |
+
+(other versions or toolchains not listed are __not supported__, and _may or may not_ work)
+
 
 ## Limitations
 
 * Very early in development - may malfunction, or outright fail to build
-* API unstable
+* Draft version - __WARNING__: Preliminary/unstable API
 * Duplex is not advertised automatically by the chip; when switching between half/full duplex in the driver, the same __must__ be manually configured on the remote node
 

@@ -5,22 +5,21 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver (P2 version)
     Copyright (c) 2023
     Started Feb 21, 2022
-    Updated Feb 14, 2023
+    Updated Jan 10, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
-#include "protocol.net.eth-ii.spin2"
-#include "protocol.net.ip.spin2"
-#include "protocol.net.arp.spin2"
-#include "protocol.net.udp.spin2"
-#include "protocol.net.bootp.spin2"
-#include "protocol.net.icmp.spin2"
+'#include "protocol.net.eth-ii.spin2"
+'#include "protocol.net.ip.spin2"
+'#include "protocol.net.arp.spin2"
+'#include "protocol.net.udp.spin2"
+'#include "protocol.net.bootp.spin2"
+'#include "protocol.net.icmp.spin2"
 #include "protocol.net.tcp.spin2"
 
 CON
 
     FIFO_MAX    = 8192-1
-    MTU_MAX     = 1518
 
 { FramePadding() options }
     VLAN        = %101
@@ -46,7 +45,6 @@ VAR
 
     long _CS
     long _curr_bank
-    byte _mac_local[MACADDR_LEN]
 
 OBJ
 
@@ -539,7 +537,6 @@ PUB set_max_retransmits(max_nr)
 PUB node_address(ptr_addr)
 ' Set this node's MAC address
 '   Valid values: pointer to 6-byte MAC address (OUI in MSB)
-    bytemove(@_mac_local, ptr_addr, MACADDR_LEN)
     writereg(core.MAADR1, 1, ptr_addr+5)        '
     writereg(core.MAADR2, 1, ptr_addr+4)        ' OUI
     writereg(core.MAADR3, 1, ptr_addr+3)        '
@@ -959,7 +956,6 @@ PUB wrblk_lsbf(ptr_buff, len): ptr
     spi.wr_byte(core.WR_BUFF)
     spi.wrblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
     pinh(_CS)
-    return len
 
 PUB wrblk_msbf(ptr_buff, len): ptr
 ' Write a block of data to the FIFO, MSByte-first
@@ -969,7 +965,6 @@ PUB wrblk_msbf(ptr_buff, len): ptr
     spi.wr_byte(core.WR_BUFF)
     spi.wrblock_msbf(ptr_buff, 1 #> len <# FIFO_MAX)
     pinh(_CS)
-    return len
 
 PUB wr_byte(b): len
 ' Write a byte of data to the FIFO

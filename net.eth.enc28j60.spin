@@ -3,23 +3,18 @@
     Filename: net.eth.enc28j60.spin
     Author: Jesse Burt
     Description: Driver for the ENC28J60 Ethernet Transceiver
-    Copyright (c) 232
+    Copyright (c) 2023
     Started Feb 21, 2022
-    Updated Mar 10, 2023
+    Updated Nov 11, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
-#include "protocol.net.eth-ii.spin"
-#include "protocol.net.ip.spin"
-#include "protocol.net.arp.spin"
-#include "protocol.net.udp.spin"
-#include "protocol.net.bootp.spin"
-#include "protocol.net.icmp.spin"
-#include "protocol.net.tcp.spin"
+#ifndef NET_COMMON
+#include "net-common.spinh"
+#endif
 CON
 
     FIFO_MAX    = 8192-1
-    MTU_MAX     = 1518
 
 { FramePadding() options }
     VLAN        = %101
@@ -41,6 +36,23 @@ CON
     DOWN        = 0
     UP          = 1
 
+    { default I/O settings - can be overridden by the parent object }
+    { SPI }
+    CS          = 0
+    SCK         = 1
+    MOSI        = 2
+    MISO        = 3
+
+    { FIFO setup }
+    MTU_MAX     = 1518
+    TX_BUFF_SZ  = MTU_MAX
+    RXSTART     = 0
+    RXSTOP      = (TXSTART - 2) | 1             '6665
+    TXSTART     = 8192 - (TX_BUFF_SZ + 8)       '6666
+    TXEND       = TXSTART + (TX_BUFF_SZ + 8)    '8192 (xxx - shouldn't this be 8191?)
+
+
+
 VAR
 
     long _CS
@@ -55,6 +67,10 @@ OBJ
 
 PUB null{}
 ' This is not a top-level object
+
+PUB start(): status
+' Start using default I/O settings
+    return startx(CS, SCK, MOSI, MISO)
 
 PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
 ' Start using custom IO pins
@@ -83,14 +99,6 @@ PUB stop{}
 
 PUB defaults{}
 ' Set factory defaults
-
-CON
-' XXX temporary
-    TX_BUFFER_SIZE  = 1518
-    RXSTART         = 0
-    RXSTOP          = (TXSTART - 2) | 1                 '6665
-    TXSTART         = 8192 - (TX_BUFFER_SIZE + 8)       '6666
-    TXEND           = TXSTART + (TX_BUFFER_SIZE + 8)    '8192 (xxx - shouldn't this be 8191?)
 
 PUB preset_fdx{}
 ' Preset settings; full-duplex
@@ -375,15 +383,35 @@ PUB full_duplex_ena(state): curr_state
     state := ((curr_state & core#FULDPX_MASK) | state)
     writereg(core#MACON3, 1, @state)
 
+VAR word _nxtpkt, _rxlen
+PUB get_frame() | rdptr
+' Receive frame from ethernet device
+    { get receive status vector }
+    fifo_set_rd_ptr(_nxtpkt)
+    rx_payload(@_nxtpkt, 6)
+
+    if ( _rxlen =< MTU_MAX )
+        { ERRATA: read pointer start must be odd; subtract 1 }
+        rdptr := _nxtpkt-1
+
+        if ((rdptr < RXSTART) or (rdptr > RXSTOP))
+            rdptr := RXSTOP
+
+        pkt_dec()
+
+        fifo_set_rx_rd_ptr(rdptr)
+    else
+
 PUB get_node_address(ptr_addr)
 ' Get this node's currently set MAC address
 '   NOTE: Buffer pointed to by ptr_addr must be 6 bytes long
-    readreg(core#MAADR1, 1, ptr_addr+5)         '
-    readreg(core#MAADR2, 1, ptr_addr+4)         ' OUI
-    readreg(core#MAADR3, 1, ptr_addr+3)         '
-    readreg(core#MAADR4, 1, ptr_addr+2)
-    readreg(core#MAADR5, 1, ptr_addr+1)
-    readreg(core#MAADR6, 1, ptr_addr)
+    readreg(core#MAADR1, 1, @_mac_local+5)         '
+    readreg(core#MAADR2, 1, @_mac_local+4)         ' OUI
+    readreg(core#MAADR3, 1, @_mac_local+3)         '
+    readreg(core#MAADR4, 1, @_mac_local+2)
+    readreg(core#MAADR5, 1, @_mac_local+1)
+    readreg(core#MAADR6, 1, @_mac_local)
+    bytemove(ptr_addr, @_mac_local, 6)
 
 PUB hdx_loopback_ena(state): curr_state
 ' Enable loopback mode when operating in half-duplex
@@ -403,22 +431,46 @@ PUB hdx_loopback_ena(state): curr_state
     state := ((curr_state & core#HDLDIS_MASK) | state)
     writereg(core#PHCON2, 1, @state)
 
-PUB inet_chksum(ck_st, ck_end, ck_dest): chk
-' Calculate checksum of frame in buffer and store the result
-'   ck_st: start of frame data to checksum
-'   ck_end: end of frame data to checksum
-'   ck_dest: location in frame data to write checksum to
-'   NOTE: positions are relative to the start of the frame (0), not absolute positions
-'       within the FIFO
+
+PUB inet_checksum(chk_st, len, addto=0): chk | chk_range
+' Calculate checksum of FIFO data (offload)
+'   chk_st: start of frame data to checksum
+'   len: length of data to checksum
+'   addto: optional value to add to checksum after it's calculated; 0 if unspecified
+'       (for example, a TCP pseudo-header checksum)
 '   Returns: calculated checksum
-    { convert given packet offsets to absolute FIFO positions }
-    ck_st += TXSTART+1
-    ck_end += TXSTART
-    ck_dest += TXSTART+1
 
     { tell the DMA engine where to find the data to perform the checksum on }
-    writereg(core#EDMASTL, 2, @ck_st)
-    writereg(core#EDMANDL, 2, @ck_end)
+    chk_range.word[0] := chk_st
+    chk_range.word[1] := (chk_st + (len-1))
+    writereg(core.EDMASTL, 4, @chk_range)       ' set start and end regs in one write
+
+    { ERRATA #15 workaround: Wait for receive to finish. The only other option is to do the
+        checksum in software. }
+    repeat while rx_busy()
+
+    calc_chksum()
+
+    repeat until dma_ready()                    ' wait for the result
+
+    { get the checksum from the chip }
+    chk := 0
+    readreg(core.EDMACSL, 2, @chk)
+    return (chk + addto) // $ffff
+
+
+PUB inet_checksum_wr(chk_st, len, chk_dest, addto=0): chk | chk_range
+' Calculate checksum of FIFO data (offload) and copy it to another location
+'   chk_st: start of frame data to checksum
+'   len: length of data to checksum
+'   chk_dest: location in frame data to write checksum to
+'   addto: optional value to add to checksum after it's calculated; 0 if unspecified
+'       (for example, a TCP pseudo-header checksum)
+'   Returns: calculated checksum
+    { tell the DMA engine where to find the data to perform the checksum on }
+    chk_range.word[0] := chk_st
+    chk_range.word[1] := (chk_st + (len-1))
+    writereg(core.EDMASTL, 4, @chk_range)       ' set start and end regs in one write
 
     { ERRATA #15: Wait for receive to finish }
     repeat while rx_busy{}
@@ -428,11 +480,13 @@ PUB inet_chksum(ck_st, ck_end, ck_dest): chk
     repeat until dma_ready{}
 
     { get the checksum from the chip and write it back to the buffer }
-    'XXX is there a way to get the ENC to just copy it using DMA? this seems silly
     chk := 0
     readreg(core#EDMACSL, 2, @chk)
-    fifo_set_wr_ptr(ck_dest)
+    fifo_set_wr_ptr(chk_dest)
+    chk := (chk + addto) // $ffff
     wrword_msbf(chk)
+    return chk
+
 
 PUB int_clear(mask)
 ' Clear interrupts
@@ -518,6 +572,12 @@ PUB max_frame_len{}: curr_len
 ' Get maximum frame length
     curr_len := 0
     readreg(core#MAMXFLL, 2, @curr_len)
+
+
+PUB my_mac(): p
+' Get a pointer to this node's MAC address
+    return @_mac_local
+
 
 PUB set_max_frame_len(len)
 ' Set maximum frame length
@@ -888,14 +948,13 @@ PUB send_frame{}
 ' Send assembled ethernet frame
     { point to assembled ethernet frame and send it }
     fifo_set_tx_start(TXSTART)              ' ETXSTL: TXSTART
-    fifo_set_tx_end(fifo_wr_ptr{})          ' ETXNDL: TXSTART+len
+    fifo_set_tx_end(fifo_wr_ptr{})      ' ETXNDL: TXSTART+len
     tx_enabled(true)                        ' send
 
-PUB start_frame{}: p
-' Reset pointers, and add control byte to frame
+PUB start_frame{}
+' Start a new Ethernet frame
     fifo_set_wr_ptr(TXSTART)
-    wr_byte($00)                                ' per-frame control byte
-    return fifo_wr_ptr{}
+    wr_byte($00)                            ' per-frame control byte
 
 PUB tx_defer_ena(state): curr_state  'XXX tentatively named
 ' Defer transmission
@@ -975,7 +1034,6 @@ PUB wrblk_lsbf(ptr_buff, len): ptr
     spi.wr_byte(core#WR_BUFF)
     spi.wrblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
     outa[_CS] := 1
-    return len
 
 PUB wrblk_msbf(ptr_buff, len): ptr | i
 ' Write a block of data to the FIFO, MSByte-first
@@ -986,7 +1044,6 @@ PUB wrblk_msbf(ptr_buff, len): ptr | i
     repeat i from len-1 to 0
         spi.wr_byte(byte[ptr_buff][i])
     outa[_CS] := 1
-    return len
 
 PUB wr_byte(b): len
 ' Write a byte of data to the FIFO
