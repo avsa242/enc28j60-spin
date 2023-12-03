@@ -5,7 +5,7 @@
     Description: Driver for the ENC28J60 Ethernet Transceiver
     Copyright (c) 2023
     Started Feb 21, 2022
-    Updated Nov 11, 2023
+    Updated Dec 3, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -55,13 +55,12 @@ CON
 
 VAR
 
-    long _CS
     long _curr_bank
     byte _mac_local[MACADDR_LEN]
 
 OBJ
 
-    spi : "com.spi.20mhz"                   ' PASM SPI engine (20MHz W/10R)
+    spi : "com.spi.20mhz.cs"                    ' PASM SPI engine (20MHz W/10R)
     core: "core.con.enc28j60"                   ' hw-specific constants
     time: "time"                                ' Basic timing functions
 
@@ -76,11 +75,9 @@ PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
 ' Start using custom IO pins
     if lookdown(CS_PIN: 0..31) and lookdown(SCK_PIN: 0..31) and {
 }   lookdown(MOSI_PIN: 0..31) and lookdown(MISO_PIN: 0..31)
+        spi.set_slave(CS_PIN)
         if (status := spi.init(SCK_PIN, MOSI_PIN, MISO_PIN, core#SPI_MODE))
             time.msleep(core#T_POR)             ' wait for device startup
-            _CS := CS_PIN                       ' copy i/o pin to hub var
-            outa[_CS] := 1
-            dira[_CS] := 1
             _curr_bank := -1                    ' establish initial bank
 
             repeat until clk_ready{}
@@ -431,7 +428,6 @@ PUB hdx_loopback_ena(state): curr_state
     state := ((curr_state & core#HDLDIS_MASK) | state)
     writereg(core#PHCON2, 1, @state)
 
-
 PUB inet_checksum(chk_st, len, addto=0): chk | chk_range
 ' Calculate checksum of FIFO data (offload)
 '   chk_st: start of frame data to checksum
@@ -457,7 +453,6 @@ PUB inet_checksum(chk_st, len, addto=0): chk | chk_range
     chk := 0
     readreg(core.EDMACSL, 2, @chk)
     return (chk + addto) // $ffff
-
 
 PUB inet_checksum_wr(chk_st, len, chk_dest, addto=0): chk | chk_range
 ' Calculate checksum of FIFO data (offload) and copy it to another location
@@ -486,7 +481,6 @@ PUB inet_checksum_wr(chk_st, len, chk_dest, addto=0): chk | chk_range
     chk := (chk + addto) // $ffff
     wrword_msbf(chk)
     return chk
-
 
 PUB int_clear(mask)
 ' Clear interrupts
@@ -573,11 +567,10 @@ PUB max_frame_len{}: curr_len
     curr_len := 0
     readreg(core#MAMXFLL, 2, @curr_len)
 
-
 PUB my_mac(): p
 ' Get a pointer to this node's MAC address
+    get_node_address(@_mac_local)
     return @_mac_local
-
 
 PUB set_max_frame_len(len)
 ' Set maximum frame length
@@ -837,56 +830,49 @@ PUB set_pkt_filter(mask)  'XXX tentative name and interface
 PUB rdblk_lsbf(ptr_buff, len): ptr
 ' Read a block of data from the FIFO, LSByte-first
 '   len: number of bytes to read
-    outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     spi.rdblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB rdblk_msbf(ptr_buff, len): ptr | i
 ' Read a block of data from the FIFO, MSByte-first
 '   len: number of bytes to read
-    outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     repeat i from (1 #> len <# FIFO_MAX)-1 to 0
         byte[ptr_buff][i] := spi.rd_byte{}
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB rd_byte{}: b
 ' Read a byte of data from the FIFO
-    outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     b := spi.rd_byte{}
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB rdlong_lsbf{}: l
 ' Read a long of data from the FIFO, LSByte-first
-    outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     l := spi.rdlong_lsbf{}
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB rdlong_msbf{}: l | i
 ' Read a long of data from the FIFO, MSByte-first
-    outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     repeat i from 3 to 0
         l.byte[i] := spi.rd_byte{}
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB rdword_lsbf{}: w
 ' Read a word of data from the FIFO, LSByte-first
-    outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     w := spi.rdword_lsbf{}
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB rdword_msbf{}: w
 ' Read a word of data from the FIFO, MSByte-first
-    outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     w.byte[1] := spi.rd_byte{}
     w.byte[0] := spi.rd_byte{}
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB reset{}
 ' Perform soft-reset
@@ -939,10 +925,9 @@ PUB rx_payload(ptr_buff, nr_bytes)
 '   Valid values:
 '       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
 '   NOTE: ptr_buff must point to a buffer at least nr_bytes long
-    outa[_CS] := 0
     spi.wr_byte(core#RD_BUFF)
     spi.rdblock_lsbf(ptr_buff, 1 #> nr_bytes)
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB send_frame{}
 ' Send assembled ethernet frame
@@ -950,9 +935,11 @@ PUB send_frame{}
     fifo_set_tx_start(TXSTART)              ' ETXSTL: TXSTART
     fifo_set_tx_end(fifo_wr_ptr{})      ' ETXNDL: TXSTART+len
     tx_enabled(true)                        ' send
+    'lockclr(_fifo_lock)
 
 PUB start_frame{}
 ' Start a new Ethernet frame
+    'repeat until not lockset(_fifo_lock)
     fifo_set_wr_ptr(TXSTART)
     wr_byte($00)                            ' per-frame control byte
 
@@ -1021,81 +1008,72 @@ PUB tx_payload(ptr_buff, nr_bytes)
 '   Valid values:
 '       nr_bytes: 1..8191 (dependent on RX and TX FIFO settings)
 '   NOTE: ptr_buff must point to a buffer at least nr_bytes long
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wrblock_lsbf(ptr_buff, 1 #> nr_bytes <# FIFO_MAX)
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB wrblk_lsbf(ptr_buff, len): ptr
 ' Write a block of data to the FIFO, LSByte-first
 '   ptr_buff: pointer to buffer of data to copy from
 '   len: number of bytes to write
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wrblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB wrblk_msbf(ptr_buff, len): ptr | i
 ' Write a block of data to the FIFO, MSByte-first
 '   ptr_buff: pointer to buffer of data to copy from
 '   len: number of bytes to write
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     repeat i from len-1 to 0
         spi.wr_byte(byte[ptr_buff][i])
-    outa[_CS] := 1
+    spi.deselect()
 
 PUB wr_byte(b): len
 ' Write a byte of data to the FIFO
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wr_byte(b)
-    outa[_CS] := 1
+    spi.deselect()
     return 1
 
 PUB wr_byte_x(b, nr_bytes): len
 ' Repeatedly write a byte to the FIFO
 '   b: byte to write
 '   nr_bytes: number of times to write byte to the FIFO
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     repeat nr_bytes
         spi.wr_byte(b)
-    outa[_CS] := 1
+    spi.deselect()
     return nr_bytes
 
 PUB wrlong_lsbf(l): len
 ' Write a long of data to the FIFO, LSByte-first
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wrlong_lsbf(l)
-    outa[_CS] := 1
+    spi.deselect()
     return 4
 
 PUB wrlong_msbf(l): len | i
 ' Write a long of data to the FIFO, MSByte-first
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     repeat i from 3 to 0
         spi.wr_byte(l.byte[i])
-    outa[_CS] := 1
+    spi.deselect()
     return 4
 
 PUB wrword_lsbf(w): len
 ' Write a word of data to the FIFO, LSByte-first
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wrword_lsbf(w)
-    outa[_CS] := 1
+    spi.deselect()
     return 2
 
 PUB wrword_msbf(w): len
 ' Write a word of data to the FIFO, MSByte-first
-    outa[_CS] := 0
     spi.wr_byte(core#WR_BUFF)
     spi.wr_byte(w.byte[1])
     spi.wr_byte(w.byte[0])
-    outa[_CS] := 1
+    spi.deselect()
     return 2
 
 PRI bank_sel(bank_nr)
@@ -1112,9 +1090,8 @@ PRI cmd(cmd_nr)
 ' Send simple command
     case cmd_nr
         core#RD_BUFF, core#WR_BUFF, core#SRC:
-            outa[_CS] := 0
             spi.wr_byte(cmd_nr)
-            outa[_CS] := 1
+            spi.deselect()
         other:
             return
 
@@ -1123,12 +1100,11 @@ PRI mii_ready{}: flag
 '   Returns: TRUE (-1) or FALSE (0)
     bank_sel(3)
     flag := 0
-    outa[_CS] := 0
     spi.wr_byte(core#RD_CTRL | core#MISTAT)
     spi.rd_byte{}                               ' dummy read
     { flag logic: is BUSY bit clear? i.e., are you _not_ busy? }
     flag := ((spi.rd_byte & core#BUSY_BITS) == 0)
-    outa[_CS] := 1
+    spi.deselect()
 
 CON
 
@@ -1151,10 +1127,9 @@ PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
             case reg_nr.byte[REGNR]             ' validate register num
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
-                        outa[_CS] := 0
                         spi.wr_byte(core#RD_CTRL | reg_nr.byte[REGNR]+i)
                         byte[ptr_buff][i] := spi.rd_byte{}
-                        outa[_CS] := 1
+                        spi.deselect()
                     return
                 other:                          ' invalid reg_nr
                     return
@@ -1163,60 +1138,52 @@ PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
             case reg_nr.byte[REGNR]
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
-                        outa[_CS] := 0
                         spi.wr_byte(core#RD_CTRL | reg_nr.byte[REGNR]+i)
                         spi.rd_byte{}           ' dummy read (required)
                         byte[ptr_buff][i] := spi.rd_byte{}
-                        outa[_CS] := 1
+                        spi.deselect()
                     return
                 other:
                     return
         PHY:                                    ' PHY regs
             bank_sel(2)                          ' for MIREGADR
-            outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MIREGADR)
             spi.wr_byte(reg_nr.byte[REGNR])
-            outa[_CS] := 1
+            spi.deselect()
 
-            outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MICMD)
             spi.wr_byte(core#MIIRD_BITS)
-            outa[_CS] := 1
+            spi.deselect()
             time.usleep(11)                     ' 10.24uS
 
             repeat until mii_ready{}
 
             bank_sel(2)
-            outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MICMD)
             spi.wr_byte(0)
-            outa[_CS] := 1
+            spi.deselect()
 
-            outa[_CS] := 0
             spi.wr_byte(core#RD_CTRL | core#MIRDL)
             spi.rd_byte{}                       ' dummy read
             byte[ptr_buff][0] := spi.rd_byte{}
-            outa[_CS] := 1
+            spi.deselect()
 
-            outa[_CS] := 0
             spi.wr_byte(core#RD_CTRL | core#MIRDH)
             spi.rd_byte{}
             byte[ptr_buff][1] := spi.rd_byte{}
-            outa[_CS] := 1
+            spi.deselect()
 
 PRI regbits_clr(reg_nr, field_nr)
 ' Clear bitfield 'field_nr' in Ethernet register 'reg_nr'
-    outa[_CS] := 0
     spi.wr_byte(core#BFC | reg_nr)
     spi.wr_byte(field_nr)
-    outa[_CS] := 1
+    spi.deselect()
 
 PRI regbits_set(reg_nr, field_nr)
 ' Set bitfield 'field_nr' in Ethernet register 'reg_nr'
-    outa[_CS] := 0
     spi.wr_byte(core#BFS | reg_nr)
     spi.wr_byte(field_nr)
-    outa[_CS] := 1
+    spi.deselect()
 
 PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
 ' Write nr_bytes to the device from ptr_buff
@@ -1226,28 +1193,24 @@ PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
             case reg_nr.byte[REGNR]
                 $00..$19, $1b..$1f:
                     repeat i from 0 to nr_bytes-1
-                        outa[_CS] := 0
                         spi.wr_byte(core#WR_CTRL | reg_nr.byte[REGNR]+i)
                         spi.wr_byte(byte[ptr_buff][i])
-                        outa[_CS] := 1
+                        spi.deselect()
                 other:
                     return
         PHY:                                    ' PHY regs
             bank_sel(2)                          ' for MIREGADR
-            outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MIREGADR)
             spi.wr_byte(reg_nr.byte[REGNR])
-            outa[_CS] := 1
+            spi.deselect()
 
-            outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MIWRL)
             spi.wr_byte(byte[ptr_buff][0])
-            outa[_CS] := 1
+            spi.deselect()
 
-            outa[_CS] := 0
             spi.wr_byte(core#WR_CTRL | core#MIWRH)
             spi.wr_byte(byte[ptr_buff][1])
-            outa[_CS] := 1
+            spi.deselect()
 
             repeat until mii_ready{}
 
