@@ -1,13 +1,12 @@
 {
-    --------------------------------------------
-    Filename: core.con.enc28j60.spin
-    Author: Jesse Burt
-    Description: ENC28J60-specific constants
-    Copyright (c) 2022
-    Started Feb 21, 2022
-    Updated Sep 11, 2022
-    See end of file for terms of use.
-    --------------------------------------------
+----------------------------------------------------------------------------------------------------
+    Filename:       core.con.enc28j60.spin
+    Description:    ENC28J60-specific constants
+    Author:         Jesse Burt
+    Started:        Feb 21, 2022
+    Updated:        Sep 11, 2024
+    Copyright (c) 2024 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
 }
 
 CON
@@ -421,12 +420,14 @@ CON
         BSEL_MASK   = BSEL_BITS ^ ECON1_MASK
         CALC_CKSUM  = (DMAST_BITS | CSUMEN_BITS)
 
-PUB null{}
+
+PUB null()
 ' This is not a top-level object
+
 
 DAT
 {
-Copyright 2022 Jesse Burt
+Copyright 2024 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

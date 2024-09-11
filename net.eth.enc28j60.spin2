@@ -1,33 +1,36 @@
 {
-    --------------------------------------------
-    Filename: net.eth.enc28j60.spin2
-    Author: Jesse Burt
-    Description: Driver for the ENC28J60 Ethernet Transceiver (P2 version)
-    Copyright (c) 2023
-    Started Feb 21, 2022
-    Updated Jan 10, 2023
-    See end of file for terms of use.
-    --------------------------------------------
+----------------------------------------------------------------------------------------------------
+    Filename:       net.eth.enc28j60.spin2
+    Description:    Driver for the ENC28J60 Ethernet Transceiver
+    Author:         Jesse Burt
+    Started:        Feb 21, 2022
+    Updated:        Sep 10, 2024
+    Copyright (c) 2024 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
 }
-'#include "protocol.net.eth-ii.spin2"
-'#include "protocol.net.ip.spin2"
-'#include "protocol.net.arp.spin2"
-'#include "protocol.net.udp.spin2"
-'#include "protocol.net.bootp.spin2"
-'#include "protocol.net.icmp.spin2"
-#include "protocol.net.tcp.spin2"
+
+#ifndef NET_COMMON
+#   include "net-common.spinh"
+#endif
 
 CON
 
-    FIFO_MAX    = 8192-1
+    { default I/O settings - can be overridden by the parent object }
+    { SPI }
+    CS          = 0
+    SCK         = 1
+    MOSI        = 2
+    MISO        = 3
+    SPI_FREQ    = 1_000_000
 
-{ FramePadding() options }
+
+    { frame_padding_mode() options }
     VLAN        = %101
     PAD64       = %011
     PAD60       = %001
     NONE        = %000
 
-{ PktFilter() filters }
+    { set_pkt_filter() filters }
     UNICAST_EN  = (1 << 7)
     ANDOR       = (1 << 6)
     PFCRC_EN    = (1 << 5)
@@ -37,28 +40,49 @@ CON
     MCAST_EN    = (1 << 1)
     BCAST_EN    = (1 << 0)
 
-{ PHY link states }
+    { phy_link_state() states }
     DOWN        = 0
     UP          = 1
 
+    { FIFO setup }
+    MTU_MAX     = 1518
+    TX_BUFF_SZ  = MTU_MAX
+    RXSTART     = 0
+    RXSTOP      = (TXSTART - 2) | 1             '6665
+    TXSTART     = 8192 - (TX_BUFF_SZ + 8)       '6666
+    TXEND       = TXSTART + (TX_BUFF_SZ + 8)    '8192 (xxx - shouldn't this be 8191?)
+
+    FIFO_MAX    = 8192-1
+
+
 VAR
 
-    long _CS
     long _curr_bank
+    byte _mac_local[MACADDR_LEN]
+
+    byte _CS
+
 
 OBJ
 
-    spi : "com.spi.25mhz"                             ' SPI engine
-    core: "core.con.enc28j60"                   ' hw-specific constants
+    spi:    "com.spi.25mhz"                       ' SPI engine
+    core:   "core.con.enc28j60"                   ' hw-specific constants
+
 
 PUB null()
 ' This is not a top-level object
 
-PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
+
+PUB start(): status
+' Start using default I/O settings
+    return startx(CS, SCK, MOSI, MISO, SPI_FREQ)
+
+
+PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_HZ): status
 ' Start using custom IO pins
-    if lookdown(CS_PIN: 0..63) and lookdown(SCK_PIN: 0..63) and {
-}   lookdown(MOSI_PIN: 0..63) and lookdown(MISO_PIN: 0..63)
-        if (status := spi.init(SCK_PIN, MOSI_PIN, MISO_PIN, core.SPI_MODE))
+    if (    lookdown(CS_PIN: 0..63) and lookdown(SCK_PIN: 0..63) and ...
+            lookdown(MOSI_PIN: 0..63) and lookdown(MISO_PIN: 0..63) )
+        if ( status := spi.init(SCK_PIN, MOSI_PIN, MISO_PIN, core.SPI_MODE, SCK_HZ) )
             waitms(core.T_POR)             ' wait for device startup
             _CS := CS_PIN                       ' copy i/o pin to hub var
             pinh(_CS)
@@ -73,21 +97,16 @@ PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
     ' Lastly - make sure you have at least one free core/cog
     return FALSE
 
+
 PUB stop()
 ' Stop the driver
     spi.deinit()
     _CS := _curr_bank := 0
 
+
 PUB defaults()
 ' Set factory defaults
 
-CON
-' XXX temporary
-    TX_BUFFER_SIZE  = 1518
-    RXSTART         = 0
-    RXSTOP          = (TXSTART - 2) | 1                 '6665
-    TXSTART         = 8192 - (TX_BUFFER_SIZE + 8)       '6666
-    TXEND           = TXSTART + (TX_BUFFER_SIZE + 8)    '8192 (xxx - shouldn't this be 8191?)
 
 PUB preset_fdx()
 ' Preset settings; full-duplex
@@ -132,18 +151,21 @@ PUB preset_fdx()
     phy_led_stretch(true)                       ' lengthen LED pulses
     rx_ena(true)
 
-PUB b2b_inter_pkt_gap{}: curr_dly
+
+PUB b2b_inter_pkt_gap(): curr_dly
 ' Get inter-packet gap delay for back-to-back packets
     curr_dly := 0
-    readreg(core#MABBIPG, 1, @curr_dly)
+    readreg(core.MABBIPG, 1, @curr_dly)
 
-PUB set_b2b_inter_pkt_gap(dly=-2)  'XXX tentatively named
+
+PUB set_b2b_inter_pkt_gap(dly)  'XXX tentatively named
 ' Set inter-packet gap delay for back-to-back packets
 '   Valid values: 0..127
 '   NOTE: When full_duplex_ena() == 1, recommended setting is 21
 '       When full_duplex_ena() == 0, recommended setting is 18
     dly := 0 #> dly <# 127
     writereg(core.MABBIPG, 1, @dly)
+
 
 PUB backoff(state=-2): curr_state  'XXX tentatively named
 ' Enable backoff
@@ -158,11 +180,11 @@ PUB backoff(state=-2): curr_state  'XXX tentatively named
     case abs(state)
         0:
             state := abs(state) << core.NOBKOFF
+            state := ((curr_state & core.NOBKOFF_MASK) | state)
+            writereg(core.MACON4, 1, @state)
         other:
             return !(((curr_state >> core.NOBKOFF) & 1) == 1)
 
-    state := ((curr_state & core.NOBKOFF_MASK) | state)
-    writereg(core.MACON4, 1, @state)
 
 PUB backpress_backoff(state=-2): curr_state 'XXX tentatively named
 ' Enable backoff during backpressure
@@ -177,15 +199,16 @@ PUB backpress_backoff(state=-2): curr_state 'XXX tentatively named
     case abs(state)
         0:
             state := abs(state) << core.BPEN
+            state := ((curr_state & core.BPEN_MASK) | state)
+            writereg(core.MACON4, 1, @state)
         other:
             return !(((curr_state >> core.BPEN) & 1) == 1)
 
-    state := ((curr_state & core.BPEN_MASK) | state)
-    writereg(core.MACON4, 1, @state)
 
 PUB calc_chksum()
 ' Use DMA engine to calculate checksum
     regbits_set(core.ECON1, core.CALC_CKSUM)
+
 
 PUB clk_ready(): status
 ' Flag indicating clock is ready
@@ -194,17 +217,20 @@ PUB clk_ready(): status
     readreg(core.ESTAT, 1, @status)
     return ((status & core.CLKRDY_BITS) == 1)
 
-PUB collision_win{}: curr_nr
+
+PUB collision_win(): curr_nr
 ' Get current collision window length
     curr_nr := 0
-    readreg(core#MACLCON2, 1, @curr_nr)
+    readreg(core.MACLCON2, 1, @curr_nr)
 
-PUB set_collision_win(nr_bytes) 'XXX tentatively named
+
+PUB set_collision_win(nr_bytes): curr_nr 'XXX tentatively named
 ' Set collision window, in number of bytes
 '   Valid values: 0..63 (default: 55)
 '   NOTE: Applies only when full_duplex_ena() == 0
     nr_bytes := 0 #> nr_bytes <# 63
     writereg(core.MACLCON2, 1, @nr_bytes)
+
 
 PUB dma_ready(): flag
 ' Flag indicating DMA engine is ready
@@ -212,11 +238,13 @@ PUB dma_ready(): flag
     readreg(core.ECON1, 1, @flag)
     return ((flag & core.DMAST_BITS) == 0)
 
+
 PUB fifo_ptr_auto_inc(): curr_state
 
     curr_state := 0
-    readreg(core#ECON2, 1, @curr_state)
-    return (((curr_state >> core#AUTOINC) & 1) == 1)
+    readreg(core.ECON2, 1, @curr_state)
+    return (((curr_state >> core.AUTOINC) & 1) == 1)
+
 
 PUB fifo_set_ptr_auto_inc(state)
 ' Auto-increment FIFO pointer when writing
@@ -224,9 +252,10 @@ PUB fifo_set_ptr_auto_inc(state)
 '   Any other value polls the chip and returns the current setting
 '   NOTE: When reached the end of the FIFO, the pointer wraps to the start
     if (state)
-        regbits_set(core#ECON2, core#AUTOINC_BITS)
+        regbits_set(core.ECON2, core.AUTOINC_BITS)
     else
         regbits_clr(core.ECON2, core.AUTOINC_BITS)
+
 
 PUB fifo_set_rd_ptr(rxpos)
 ' Set read position within FIFO
@@ -234,10 +263,12 @@ PUB fifo_set_rd_ptr(rxpos)
     rxpos := 0 #> rxpos <# FIFO_MAX
     writereg(core.ERDPTL, 2, @rxpos)
 
+
 PUB fifo_rd_ptr(): curr_ptr
 ' Get current read position within FIFO
     curr_ptr := 0
     readreg(core.ERDPTL, 2, @curr_ptr)
+
 
 PUB fifo_set_rx_end(rxe)
 ' Set ending position within FIFO for RX region
@@ -245,10 +276,12 @@ PUB fifo_set_rx_end(rxe)
     rxe := 0 #> rxe <# FIFO_MAX
     writereg(core.ERXNDL, 2, @rxe)
 
+
 PUB fifo_rx_end(): r_end
 ' Get end of receive region within FIFO
     r_end := 0
     readreg(core.ERXNDL, 2, @r_end)
+
 
 PUB fifo_set_rx_rd_ptr(rxrd)
 ' Set read pointer within receive region of FIFO
@@ -256,10 +289,12 @@ PUB fifo_set_rx_rd_ptr(rxrd)
     rxrd := 0 #> rxrd <# FIFO_MAX
     writereg(core.ERXRDPTL, 2, @rxrd)
 
+
 PUB fifo_rx_rd_ptr(): curr_ptr
 ' Get current read pointer within receive region of FIFO
     curr_ptr := 0
     readreg(core.ERXRDPTL, 2, @curr_ptr)
+
 
 PUB fifo_set_rx_wr_ptr(rxwr)
 ' Set pointer in FIFO where received data will be written
@@ -267,21 +302,25 @@ PUB fifo_set_rx_wr_ptr(rxwr)
     rxwr := 0 #> rxwr <# FIFO_MAX
     writereg(core.ERXWRPTL, 2, @rxwr)
 
+
 PUB fifo_rx_wr_ptr(): curr_ptr
 ' Get current write pointer within receive region of FIFO
     curr_ptr := 0
     readreg(core.ERXWRPTL, 2, @curr_ptr)
 
-PUB fifo_set_rx_start(rxs=-2): curr_ptr
+
+PUB fifo_set_rx_start(rxs): curr_ptr
 ' Set start of receive region within FIFO
 '   Valid values: 0..8191
     rxs := 0 #> rxs <# FIFO_MAX
     writereg(core.ERXSTL, 2, @rxs)
 
+
 PUB fifo_rx_start(): r_st
 ' Get start of receive region within FIFO
     r_st := 0
     readreg(core.ERXSTL, 2, @r_st)
+
 
 PUB fifo_set_tx_end(txe)
 ' Set end of transmit region within FIFO
@@ -289,10 +328,12 @@ PUB fifo_set_tx_end(txe)
     txe := 0 #> txe <# FIFO_MAX
     writereg(core.ETXNDL, 2, @txe)
 
+
 PUB fifo_tx_end(): t_end
 ' Get end of transmit region within FIFO
     t_end := 0
     readreg(core.ETXNDL, 2, @t_end)
+
 
 PUB fifo_set_tx_start(txs)
 ' Set start of transmit region within FIFO
@@ -300,10 +341,12 @@ PUB fifo_set_tx_start(txs)
     txs := 0 #> txs <# FIFO_MAX
     writereg(core.ETXSTL, 2, @txs)
 
+
 PUB fifo_tx_start(): txs
 ' Get start of transmit region within FIFO
     txs := 0
     readreg(core.ETXSTL, 2, @txs)
+
 
 PUB fifo_set_wr_ptr(ptr)
 ' Set write pointer within FIFO
@@ -311,10 +354,12 @@ PUB fifo_set_wr_ptr(ptr)
     ptr := 0 #> ptr <# FIFO_MAX
     writereg(core.EWRPTL, 2, @ptr)
 
+
 PUB fifo_wr_ptr(): curr_ptr
 ' Get current write pointer within FIFO
     curr_ptr := 0
     readreg(core.EWRPTL, 2, @curr_ptr)
+
 
 PUB frame_len_check_ena(state=-2): curr_state    'XXX tentatively named
 ' Enable frame length checking
@@ -325,11 +370,11 @@ PUB frame_len_check_ena(state=-2): curr_state    'XXX tentatively named
     case abs(state)
         0, 1:
             state := abs(state) << core.FRMLNEN
+            state := ((curr_state & core.FRMLNEN_MASK) | state)
+            writereg(core.MACON3, 1, @state)
         other:
             return (((curr_state >> core.FRMLNEN) & 1) == 1)
 
-    state := ((curr_state & core.FRMLNEN_MASK) | state)
-    writereg(core.MACON3, 1, @state)
 
 PUB frame_padding_mode(mode=-2): curr_md | txcrcen    'XXX tentatively named
 ' Set frame padding mode
@@ -351,13 +396,13 @@ PUB frame_padding_mode(mode=-2): curr_md | txcrcen    'XXX tentatively named
                 frames is required - set the TXCRCEN bit}
             if (lookdown(mode: %001, %011, %111, %101))
                 txcrcen := core.TXCRCEN_BITS
+            mode := ((curr_md & core.PADCFG_MASK) | mode) | txcrcen
+            writereg(core.MACON3, 1, @mode)
         other:
             return (curr_md >> core.PADCFG)
 
-    mode := ((curr_md & core.PADCFG_MASK) | mode) | txcrcen
-    writereg(core.MACON3, 1, @mode)
 
-PUB full_duplex_ena(state): curr_state
+PUB full_duplex_ena(state=-2): curr_state
 ' Enable full-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -366,23 +411,44 @@ PUB full_duplex_ena(state): curr_state
     case abs(state)
         0, 1:
             state := abs(state)
+            state := ((curr_state & core.FULDPX_MASK) | state)
+            writereg(core.MACON3, 1, @state)
         other:
             return ((curr_state & 1) == 1)
 
-    state := ((curr_state & core.FULDPX_MASK) | state)
-    writereg(core.MACON3, 1, @state)
+
+VAR word _nxtpkt, _rxlen
+PUB get_frame() | rdptr
+' Receive frame from ethernet device
+    { get receive status vector }
+    fifo_set_rd_ptr(_nxtpkt)
+    rx_payload(@_nxtpkt, 6)
+
+    if ( _rxlen <= MTU_MAX )
+        { ERRATA: read pointer start must be odd; subtract 1 }
+        rdptr := _nxtpkt-1
+
+        if ((rdptr < RXSTART) or (rdptr > RXSTOP))
+            rdptr := RXSTOP
+
+        pkt_dec()
+
+        fifo_set_rx_rd_ptr(rdptr)
+
 
 PUB get_node_address(ptr_addr)
 ' Get this node's currently set MAC address
 '   NOTE: Buffer pointed to by ptr_addr must be 6 bytes long
-    readreg(core.MAADR1, 1, ptr_addr+5)         '
-    readreg(core.MAADR2, 1, ptr_addr+4)         ' OUI
-    readreg(core.MAADR3, 1, ptr_addr+3)         '
-    readreg(core.MAADR4, 1, ptr_addr+2)
-    readreg(core.MAADR5, 1, ptr_addr+1)
-    readreg(core.MAADR6, 1, ptr_addr)
+    readreg(core.MAADR1, 1, @_mac_local+5)         '
+    readreg(core.MAADR2, 1, @_mac_local+4)         ' OUI
+    readreg(core.MAADR3, 1, @_mac_local+3)         '
+    readreg(core.MAADR4, 1, @_mac_local+2)
+    readreg(core.MAADR5, 1, @_mac_local+1)
+    readreg(core.MAADR6, 1, @_mac_local)
+    bytemove(ptr_addr, @_mac_local, 6)
 
-PUB hdx_loopback_ena(state): curr_state
+
+PUB hdx_loopback_ena(state=-2): curr_state
 ' Enable loopback mode when operating in half-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -394,28 +460,51 @@ PUB hdx_loopback_ena(state): curr_state
             { invert logic before setting bit - description of field
              actually reads as 'PHY half-duplex loopback _disable_ bit' }
             state := ((!state) & 1) << core.HDLDIS
+            state := ((curr_state & core.HDLDIS_MASK) | state)
+            writereg(core.PHCON2, 1, @state)
         other:
             return (((curr_state >> core.HDLDIS) & 1) == 0)
 
-    state := ((curr_state & core.HDLDIS_MASK) | state)
-    writereg(core.PHCON2, 1, @state)
 
-PUB inet_chksum(ck_st, ck_end, ck_dest): chk
-' Calculate checksum of frame in buffer and store the result
-'   ck_st: start of frame data to checksum
-'   ck_end: end of frame data to checksum
-'   ck_dest: location in frame data to write checksum to
-'   NOTE: positions are relative to the start of the frame (0), not absolute positions
-'       within the FIFO
+PUB inet_checksum(chk_st, len, addto=0): chk | chk_range
+' Calculate checksum of FIFO data (offload)
+'   chk_st: start of frame data to checksum
+'   len: length of data to checksum
+'   addto: optional value to add to checksum after it's calculated; 0 if unspecified
+'       (for example, a TCP pseudo-header checksum)
 '   Returns: calculated checksum
-    { convert given packet offsets to absolute FIFO positions }
-    ck_st += TXSTART+1
-    ck_end += TXSTART
-    ck_dest += TXSTART+1
 
     { tell the DMA engine where to find the data to perform the checksum on }
-    writereg(core.EDMASTL, 2, @ck_st)
-    writereg(core.EDMANDL, 2, @ck_end)
+    chk_range.word[0] := chk_st
+    chk_range.word[1] := (chk_st + (len-1))
+    writereg(core.EDMASTL, 4, @chk_range)       ' set start and end regs in one write
+
+    { ERRATA #15 workaround: Wait for receive to finish. The only other option is to do the
+        checksum in software. }
+    repeat while rx_busy()
+
+    calc_chksum()
+
+    repeat until dma_ready()                    ' wait for the result
+
+    { get the checksum from the chip }
+    chk := 0
+    readreg(core.EDMACSL, 2, @chk)
+    return (chk + addto) // $ffff
+
+
+PUB inet_checksum_wr(chk_st, len, chk_dest, addto=0): chk | chk_range
+' Calculate checksum of FIFO data (offload) and copy it to another location
+'   chk_st: start of frame data to checksum
+'   len: length of data to checksum
+'   chk_dest: location in frame data to write checksum to
+'   addto: optional value to add to checksum after it's calculated; 0 if unspecified
+'       (for example, a TCP pseudo-header checksum)
+'   Returns: calculated checksum
+    { tell the DMA engine where to find the data to perform the checksum on }
+    chk_range.word[0] := chk_st
+    chk_range.word[1] := (chk_st + (len-1))
+    writereg(core.EDMASTL, 4, @chk_range)       ' set start and end regs in one write
 
     { ERRATA #15: Wait for receive to finish }
     repeat while rx_busy()
@@ -425,11 +514,13 @@ PUB inet_chksum(ck_st, ck_end, ck_dest): chk
     repeat until dma_ready()
 
     { get the checksum from the chip and write it back to the buffer }
-    'XXX is there a way to get the ENC to just copy it using DMA? this seems silly
     chk := 0
     readreg(core.EDMACSL, 2, @chk)
-    fifo_set_wr_ptr(ck_dest)
+    fifo_set_wr_ptr(chk_dest)
+    chk := (chk + addto) // $ffff
     wrword_msbf(chk)
+    return chk
+
 
 PUB int_clear(mask)
 ' Clear interrupts
@@ -445,10 +536,12 @@ PUB int_clear(mask)
     mask &= core.EIR_CLRBITS
     writereg(core.EIR, 1, @mask)
 
-PUB inter_pkt_gap{}: curr_dly
+
+PUB inter_pkt_gap(): curr_dly
 ' Get inter-packet gap delay for _non_-back-to-back packets
     curr_dly := 0
-    readreg(core#MAIPGL, 1, @curr_dly)
+    readreg(core.MAIPGL, 1, @curr_dly)
+
 
 PUB set_inter_pkt_gap(dly) 'XXX tentatively named
 ' Set inter-packet gap delay for _non_-back-to-back packets
@@ -457,10 +550,12 @@ PUB set_inter_pkt_gap(dly) 'XXX tentatively named
     dly := 0 #> dly <# 127
     writereg(core.MAIPGL, 1, @dly)
 
-PUB inter_pkt_gap_hdx{}: curr_dly
+
+PUB inter_pkt_gap_hdx(): curr_dly
 ' Get inter-packet gap delay for _non_-back-to-back packets (half-duplex mode)
     curr_dly := 0
-    readreg(core#MAIPGH, 1, @curr_dly)
+    readreg(core.MAIPGH, 1, @curr_dly)
+
 
 PUB set_inter_pkt_gap_hdx(dly): curr_dly  'XXX tentatively named
 ' Set inter-packet gap delay for _non_-back-to-back packets (half-duplex mode)
@@ -469,6 +564,7 @@ PUB set_inter_pkt_gap_hdx(dly): curr_dly  'XXX tentatively named
 '   NOTE: Recommended setting is $0C
     dly := 0 #> dly <# 127
     writereg(core.MAIPGH, 1, @dly)
+
 
 PUB interrupt(): int_src
 ' Interrupt flags
@@ -479,9 +575,10 @@ PUB interrupt(): int_src
 '       3: transmit has ended
 '       1: transmit error
 '       0: receive error: insufficient buffer space
-'           or PktCnt() >= 255 (call PktDec())
+'           or pkt_cnt() >= 255 (call pkt_dec())
     int_src := 0
     readreg(core.EIR, 1, @int_src)
+
 
 PUB int_mask(mask)
 ' Enable interrupt flags
@@ -496,7 +593,8 @@ PUB int_mask(mask)
     mask &= core.EIE_MASK
     writereg(core.EIE, 1, @mask)
 
-PUB mac_rx_ena(state): curr_state 'XXX tentative name
+
+PUB mac_rx_ena(state=-2): curr_state 'XXX tentative name
 ' Enable MAC reception of frames
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -511,10 +609,18 @@ PUB mac_rx_ena(state): curr_state 'XXX tentative name
     state := ((curr_state & core.MARXEN_MASK) | state)
     writereg(core.MACON1, 1, @state)
 
-PUB max_frame_len{}: curr_len
+
+PUB max_frame_len(): curr_len
 ' Get maximum frame length
     curr_len := 0
     readreg(core.MAMXFLL, 2, @curr_len)
+
+
+PUB my_mac(): p
+' Get a pointer to this node's MAC address
+    get_node_address(@_mac_local)
+    return @_mac_local
+
 
 PUB set_max_frame_len(len)
 ' Set maximum frame length
@@ -522,10 +628,12 @@ PUB set_max_frame_len(len)
     len := 0 #> len <# 65535
     writereg(core.MAMXFLL, 2, @len)
 
-PUB max_retransmits{}: curr_max
+
+PUB max_retransmits(): curr_max
 ' Get maximum number of retransmissions
     curr_max := 0
     readreg(core.MACLCON1, 1, @curr_max)
+
 
 PUB set_max_retransmits(max_nr)
 ' Set maximum number of retransmissions
@@ -534,9 +642,11 @@ PUB set_max_retransmits(max_nr)
     max_nr := 0 #> max_nr <# 15
     writereg(core.MACLCON1, 1, @max_nr)
 
+
 PUB node_address(ptr_addr)
 ' Set this node's MAC address
 '   Valid values: pointer to 6-byte MAC address (OUI in MSB)
+    bytemove(@_mac_local, ptr_addr, MACADDR_LEN)
     writereg(core.MAADR1, 1, ptr_addr+5)        '
     writereg(core.MAADR2, 1, ptr_addr+4)        ' OUI
     writereg(core.MAADR3, 1, ptr_addr+3)        '
@@ -544,7 +654,8 @@ PUB node_address(ptr_addr)
     writereg(core.MAADR5, 1, ptr_addr+1)
     writereg(core.MAADR6, 1, ptr_addr)
 
-PUB phy_full_duplex_ena(state): curr_state    'XXX tentatively named
+
+PUB phy_full_duplex_ena(state=-2): curr_state    'XXX tentatively named
 ' Set PHY to full-duplex
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -553,13 +664,13 @@ PUB phy_full_duplex_ena(state): curr_state    'XXX tentatively named
     case abs(state)
         0, 1:
             state := abs(state) << core.PDPXMD
+            state := ((curr_state & core.PDPXMD_MASK) | state)
+            writereg(core.PHCON1, 1, @state)
         other:
             return (((curr_state >> core.PDPXMD) & 1) == 1)
 
-    state := ((curr_state & core.PDPXMD_MASK) | state)
-    writereg(core.PHCON1, 1, @state)
 
-PUB phy_led_a_mode(mode): curr_md  'XXX tentatively named
+PUB phy_led_a_mode(mode=-2): curr_md  'XXX tentatively named
 ' Configure PHY LED A mode
 '   Valid values:
 '       %0001: display transmit activity
@@ -580,13 +691,13 @@ PUB phy_led_a_mode(mode): curr_md  'XXX tentatively named
     case mode
         %0001..%0101, %0111..%1110:
             mode <<= core.LACFG
+            mode := ((curr_md & core.LACFG_MASK) | mode)
+            writereg(core.PHLCON, 1, @mode)
         other:
             return ((curr_md >> core.LACFG) & core.LACFG_BITS)
 
-    mode := ((curr_md & core.LACFG_MASK) | mode)
-    writereg(core.PHLCON, 1, @mode)
 
-PUB phy_led_b_mode(mode): curr_md    'XXX tentatively named
+PUB phy_led_b_mode(mode=-2): curr_md    'XXX tentatively named
 ' Configure PHY LED B mode
 '   Valid values:
 '       %0001: display transmit activity
@@ -607,13 +718,13 @@ PUB phy_led_b_mode(mode): curr_md    'XXX tentatively named
     case mode
         %0001..%0101, %0111..%1110:
             mode <<= core.LBCFG
+            mode := ((curr_md & core.LBCFG_MASK) | mode)
+            writereg(core.PHLCON, 1, @mode)
         other:
             return ((curr_md >> core.LBCFG) & core.LBCFG_BITS)
 
-    mode := ((curr_md & core.LBCFG_MASK) | mode)
-    writereg(core.PHLCON, 1, @mode)
 
-PUB phy_led_stretch(state): curr_state    'XXX tentatively named
+PUB phy_led_stretch(state=-2): curr_state    'XXX tentatively named
 ' Lengthen LED pulses
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -622,11 +733,11 @@ PUB phy_led_stretch(state): curr_state    'XXX tentatively named
     case abs(state)
         0, 1:
             state := abs(state) << core.STRCH
+            state := ((curr_state & core.STRCH_MASK) | state)
+            writereg(core.PHLCON, 1, @state)
         other:
             return (((curr_state >> core.STRCH) & 1) == 1)
 
-    state := ((curr_state & core.STRCH_MASK) | state)
-    writereg(core.PHLCON, 1, @state)
 
 PUB phy_link_state(): state    'XXX tentatively named
 ' Get PHY Link state
@@ -637,7 +748,8 @@ PUB phy_link_state(): state    'XXX tentatively named
     readreg(core.PHSTAT2, 1, @state)
     return ((state >> core.LSTAT) & 1)
 
-PUB phy_loopback_ena(state): curr_state    'XXX tentatively named
+
+PUB phy_loopback_ena(state=-2): curr_state    'XXX tentatively named
 ' Loop-back all data transmitted and disable interface to twisted-pair
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -646,13 +758,13 @@ PUB phy_loopback_ena(state): curr_state    'XXX tentatively named
     case abs(state)
         0, 1:
             state := abs(state) << core.PLOOPBK
+            state := ((curr_state & core.PLOOPBK_MASK) | state)
+            writereg(core.PHCON1, 1, @state)
         other:
             return (((curr_state >> core.PLOOPBK) & 1) == 1)
 
-    state := ((curr_state & core.PLOOPBK_MASK) | state)
-    writereg(core.PHCON1, 1, @state)
 
-PUB phy_powered(state): curr_state    'XXX tentatively named
+PUB phy_powered(state=-2): curr_state    'XXX tentatively named
 ' Power down PHY
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -663,11 +775,11 @@ PUB phy_powered(state): curr_state    'XXX tentatively named
             { invert logic before setting bit - description of field
              actually reads as 'PHY power-_down_ bit' }
             state := (! abs(state) ) << core.PPWRSV
+            state := ((curr_state & core.PPWRSV_MASK) | state)
+            writereg(core.PHCON1, 1, @state)
         other:
             return (((curr_state >> core.PPWRSV) & 1) == 0)
 
-    state := ((curr_state & core.PPWRSV_MASK) | state)
-    writereg(core.PHCON1, 1, @state)
 
 PUB phy_reset() | tmp    'XXX tentatively named
 ' Reset PHY
@@ -680,15 +792,17 @@ PUB phy_reset() | tmp    'XXX tentatively named
         readreg(core.PHCON1, 1, @tmp)
     while (tmp & core.PRST_BITS)
 
+
 PUB pkt_cnt(): pcnt
 ' Get count of packets received
 '   Returns: u8
 '   NOTE: If this value reaches/exceeds 255, any new packets received will be
 '       aborted, even if space exists in the device's FIFO.
 '       Bit 0 (RXERIF) will be set in Interrupt()
-'       When packets are "read", the counter must be decremented using PktDec()
+'       When packets are "read", the counter must be decremented using pkt_dec()
     pcnt := 0
     readreg(core.EPKTCNT, 1, @pcnt)
+
 
 PUB pkt_ctrl(mask)
 ' Set per-packet control mask
@@ -712,15 +826,18 @@ PUB pkt_ctrl(mask)
     mask &= $0f
     tx_payload(@mask, 1)
 
+
 PUB pkt_dec()
 ' Decrement packet counter
 '   NOTE: This _must_ be performed after considering a packet to be "read"
     regbits_set(core.ECON2, core.PKTDEC_BITS)
 
-PUB pkt_filter{}: fmask
+
+PUB pkt_filter(): fmask
 ' Get current packet filter mask
     fmask := 0
-    readreg(core#ERXFCON, 1, @fmask)
+    readreg(core.ERXFCON, 1, @fmask)
+
 
 PUB set_pkt_filter(mask)  'XXX tentative name and interface
 ' Set ethernet receive filter mask
@@ -770,6 +887,7 @@ PUB set_pkt_filter(mask)  'XXX tentative name and interface
     mask &= $ff
     writereg(core.ERXFCON, 1, @mask)
 
+
 PUB rdblk_lsbf(ptr_buff, len): ptr
 ' Read a block of data from the FIFO, LSByte-first
 '   len: number of bytes to read
@@ -777,6 +895,7 @@ PUB rdblk_lsbf(ptr_buff, len): ptr
     spi.wr_byte(core.RD_BUFF)
     spi.rdblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
     pinh(_CS)
+
 
 PUB rdblk_msbf(ptr_buff, len): ptr | i
 ' Read a block of data from the FIFO, MSByte-first
@@ -786,6 +905,7 @@ PUB rdblk_msbf(ptr_buff, len): ptr | i
     spi.rdblock_msbf(ptr_buff, len)
     pinh(_CS)
 
+
 PUB rd_byte(): b
 ' Read a byte of data from the FIFO
     pinl(_CS)
@@ -793,12 +913,14 @@ PUB rd_byte(): b
     b := spi.rd_byte()
     pinh(_CS)
 
+
 PUB rdlong_lsbf(): l
-' Read a long a block of data from the FIFO, LSByte-first
+' Read a long of data from the FIFO, LSByte-first
     pinl(_CS)
     spi.wr_byte(core.RD_BUFF)
     l := spi.rdlong_lsbf()
     pinh(_CS)
+
 
 PUB rdlong_msbf(): l | i
 ' Read a long of data from the FIFO, MSByte-first
@@ -808,12 +930,14 @@ PUB rdlong_msbf(): l | i
         l.byte[i] := spi.rd_byte()
     pinh(_CS)
 
+
 PUB rdword_lsbf(): w
 ' Read a word of data from the FIFO, LSByte-first
     pinl(_CS)
     spi.wr_byte(core.RD_BUFF)
     w := spi.rdword_lsbf()
     pinh(_CS)
+
 
 PUB rdword_msbf(): w
 ' Read a word of data from the FIFO, MSByte-first
@@ -822,14 +946,17 @@ PUB rdword_msbf(): w
     w := spi.rdword_msbf()
     pinh(_CS)
 
+
 PUB reset()
 ' Perform soft-reset
     cmd(core.SRC)
+
 
 PUB rev_id(): id
 ' Get device revision
     id := 0
     readreg(core.EREVID, 1, @id)
+
 
 PUB rx_busy(): flag
 ' Flag indicating chip is busy receiving
@@ -837,23 +964,26 @@ PUB rx_busy(): flag
     readreg(core.ESTAT, 1, @flag)
     return ((flag & core.RXBUSY_BITS) <> 0)
 
+
 PUB rx_enabled = rx_ena
 PUB rx_ena(state)
 ' Enable reception of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
     if (state)
-        regbits_set(core#ECON1, core#RXEN_BITS)
+        regbits_set(core.ECON1, core.RXEN_BITS)
     else
         regbits_clr(core.ECON1, core.RXEN_BITS)
 
-PUB rx_is_ena{}: rxen
+
+PUB rx_is_ena(): rxen
 ' Flag indicating reception of packets is enabled
 '   Returns: TRUE (-1) or FALSE
     rxen := 0
     readreg(core.ECON1, 1, @rxen)
     return (((rxen >> core.RXEN) & 1) == 1)
 
-PUB rx_flow_ctrl_ena(state): curr_state   'XXX tentatively named
+
+PUB rx_flow_ctrl_ena(state=-2): curr_state   'XXX tentatively named
 ' Enable receive flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -862,11 +992,11 @@ PUB rx_flow_ctrl_ena(state): curr_state   'XXX tentatively named
     case abs(state)
         0, 1:
             state := abs(state) << core.RXPAUS
+            state := ((curr_state & core.RXPAUS_MASK) | state)
+            writereg(core.MACON1, 1, @state)
         other:
             return (((curr_state >> core.RXPAUS) & 1) == 1)
 
-    state := ((curr_state & core.RXPAUS_MASK) | state)
-    writereg(core.MACON1, 1, @state)
 
 PUB rx_payload(ptr_buff, nr_bytes)
 ' Receive payload from FIFO
@@ -878,7 +1008,22 @@ PUB rx_payload(ptr_buff, nr_bytes)
     spi.rdblock_lsbf(ptr_buff, 1 #> nr_bytes)
     pinh(_CS)
 
-PUB tx_defer_ena(state): curr_state  'XXX tentatively named
+
+PUB send_frame()
+' Send assembled ethernet frame
+    { point to assembled ethernet frame and send it }
+    fifo_set_tx_start(TXSTART)                  ' ETXSTL: TXSTART
+    fifo_set_tx_end(fifo_wr_ptr())              ' ETXNDL: TXSTART+len
+    tx_enabled(true)                            ' send
+
+
+PUB start_frame()
+' Start a new Ethernet frame
+    fifo_set_wr_ptr(TXSTART)
+    wr_byte($00)                                ' per-frame control byte
+
+
+PUB tx_defer_ena(state=-2): curr_state  'XXX tentatively named
 ' Defer transmission
 '   Valid values:
 '       TRUE (-1 or 1): MAC waits indefinitely for medium to become free
@@ -892,14 +1037,14 @@ PUB tx_defer_ena(state): curr_state  'XXX tentatively named
     case abs(state)
         0, 1:
             state := abs(state) << core.DEFER
+            state := ((curr_state & core.DEFER_MASK) | state)
+            writereg(core.MACON4, 1, @state)
         other:
             return (((curr_state >> core.DEFER) & 1) == 1)
 
-    state := ((curr_state & core.DEFER_MASK) | state)
-    writereg(core.MACON4, 1, @state)
 
 PUB tx_enabled = tx_ena
-PUB tx_ena(state): curr_state | checked
+PUB tx_ena(state=-2): curr_state | checked
 ' Enable transmission of packets
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -907,7 +1052,7 @@ PUB tx_ena(state): curr_state | checked
         0:
             regbits_clr(core.ECON1, core.TXRTS_BITS)
         1:
-            { ERRATA: (B5): .10 - Reset transmit logic before send }
+            { ERRATA: (B5): #10 - Reset transmit logic before send }
             regbits_set(core.ECON1, core.TXRST_BITS)
             regbits_clr(core.ECON1, core.TXRST_BITS)
             regbits_set(core.ECON1, core.TXRTS_BITS)
@@ -923,7 +1068,8 @@ PUB tx_ena(state): curr_state | checked
             return (((curr_state >> core.TXRTS) & 1) == 1)
     regbits_clr(core.ECON1, core.TXRTS_BITS)
 
-PUB tx_flow_ctrl_ena(state): curr_state   'XXX tentatively named
+
+PUB tx_flow_ctrl_ena(state=-2): curr_state   'XXX tentatively named
 ' Enable transmit flow control
 '   Valid values: TRUE (-1 or 1), FALSE (0)
 '   Any other value polls the chip and returns the current setting
@@ -932,11 +1078,11 @@ PUB tx_flow_ctrl_ena(state): curr_state   'XXX tentatively named
     case abs(state)
         0, 1:
             state := abs(state) << core.TXPAUS
+            state := ((curr_state & core.TXPAUS_MASK) | state)
+            writereg(core.MACON1, 1, @state)
         other:
             return (((curr_state >> core.TXPAUS) & 1) == 1)
 
-    state := ((curr_state & core.TXPAUS_MASK) | state)
-    writereg(core.MACON1, 1, @state)
 
 PUB tx_payload(ptr_buff, nr_bytes)
 ' Queue payload to be transmitted
@@ -948,6 +1094,7 @@ PUB tx_payload(ptr_buff, nr_bytes)
     spi.wrblock_lsbf(ptr_buff, 1 #> nr_bytes <# FIFO_MAX)
     pinh(_CS)
 
+
 PUB wrblk_lsbf(ptr_buff, len): ptr
 ' Write a block of data to the FIFO, LSByte-first
 '   ptr_buff: pointer to buffer of data to copy from
@@ -956,6 +1103,7 @@ PUB wrblk_lsbf(ptr_buff, len): ptr
     spi.wr_byte(core.WR_BUFF)
     spi.wrblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
     pinh(_CS)
+
 
 PUB wrblk_msbf(ptr_buff, len): ptr
 ' Write a block of data to the FIFO, MSByte-first
@@ -966,6 +1114,7 @@ PUB wrblk_msbf(ptr_buff, len): ptr
     spi.wrblock_msbf(ptr_buff, 1 #> len <# FIFO_MAX)
     pinh(_CS)
 
+
 PUB wr_byte(b): len
 ' Write a byte of data to the FIFO
     pinl(_CS)
@@ -973,6 +1122,7 @@ PUB wr_byte(b): len
     spi.wr_byte(b)
     pinh(_CS)
     return 1
+
 
 PUB wr_byte_x(b, nr_bytes): len
 ' Repeatedly write a byte to the FIFO
@@ -984,6 +1134,7 @@ PUB wr_byte_x(b, nr_bytes): len
     pinh(_CS)
     return nr_bytes
 
+
 PUB wrlong_lsbf(l): len
 ' Write a long of data to the FIFO, LSByte-first
     pinl(_CS)
@@ -991,6 +1142,7 @@ PUB wrlong_lsbf(l): len
     spi.wrlong_lsbf(l)
     pinh(_CS)
     return 4
+
 
 PUB wrlong_msbf(l): len | i
 ' Write a long of data to the FIFO, MSByte-first
@@ -1000,6 +1152,7 @@ PUB wrlong_msbf(l): len | i
     pinh(_CS)
     return 4
 
+
 PUB wrword_lsbf(w): len
 ' Write a word of data to the FIFO, LSByte-first
     pinl(_CS)
@@ -1008,6 +1161,7 @@ PUB wrword_lsbf(w): len
     pinh(_CS)
     return 2
 
+
 PUB wrword_msbf(w): len
 ' Write a word of data to the FIFO, MSByte-first
     pinl(_CS)
@@ -1015,6 +1169,7 @@ PUB wrword_msbf(w): len
     spi.wrword_msbf(w)
     pinh(_CS)
     return 2
+
 
 PRI bank_sel(bank_nr)
 ' Select register bank
@@ -1026,6 +1181,7 @@ PRI bank_sel(bank_nr)
     regbits_set(core.ECON1, 0 #> bank_nr <# 3)
     _curr_bank := bank_nr
 
+
 PRI cmd(cmd_nr)
 ' Send simple command
     case cmd_nr
@@ -1035,6 +1191,7 @@ PRI cmd(cmd_nr)
             pinh(_CS)
         other:
             return
+
 
 PRI mii_ready(): flag
 ' Get MII readiness status
@@ -1047,6 +1204,7 @@ PRI mii_ready(): flag
     { flag logic: is BUSY bit clear? i.e., are you _not_ busy? }
     flag := ((spi.rd_byte & core.BUSY_BITS) == 0)
     pinh(_CS)
+
 
 CON
 
@@ -1090,7 +1248,7 @@ PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
                 other:
                     return
         PHY:                                    ' PHY regs
-            bank_sel(2)                          ' for MIREGADR
+            bank_sel(2)                         ' for MIREGADR
             pinl(_CS)
             spi.wr_byte(core.WR_CTRL | core.MIREGADR)
             spi.wr_byte(reg_nr.byte[REGNR])
@@ -1100,7 +1258,7 @@ PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
             spi.wr_byte(core.WR_CTRL | core.MICMD)
             spi.wr_byte(core.MIIRD_BITS)
             pinh(_CS)
-            waitus(11)                     ' 10.24uS
+            waitus(11)                          ' 10.24uS
 
             repeat until mii_ready()
 
@@ -1122,6 +1280,7 @@ PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
             byte[ptr_buff][1] := spi.rd_byte()
             pinh(_CS)
 
+
 PRI regbits_clr(reg_nr, field_nr)
 ' Clear bitfield 'field_nr' in Ethernet register 'reg_nr'
     pinl(_CS)
@@ -1129,12 +1288,14 @@ PRI regbits_clr(reg_nr, field_nr)
     spi.wr_byte(field_nr)
     pinh(_CS)
 
+
 PRI regbits_set(reg_nr, field_nr)
 ' Set bitfield 'field_nr' in Ethernet register 'reg_nr'
     pinl(_CS)
     spi.wr_byte(core.BFS | reg_nr)
     spi.wr_byte(field_nr)
     pinh(_CS)
+
 
 PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
 ' Write nr_bytes to the device from ptr_buff
@@ -1151,7 +1312,7 @@ PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
                 other:
                     return
         PHY:                                    ' PHY regs
-            bank_sel(2)                          ' for MIREGADR
+            bank_sel(2)                         ' for MIREGADR
             pinl(_CS)
             spi.wr_byte(core.WR_CTRL | core.MIREGADR)
             spi.wr_byte(reg_nr.byte[REGNR])
@@ -1172,9 +1333,10 @@ PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
         other:
             return
 
+
 DAT
 {
-Copyright 2022 Jesse Burt
+Copyright 2024 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
