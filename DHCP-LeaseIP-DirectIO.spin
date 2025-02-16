@@ -9,8 +9,8 @@
         * assembles frames directly on the chip
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Sep 9, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 16, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
@@ -169,10 +169,11 @@ PUB main()
                     process_ethii()
 
 
-PUB dhcp_msg(msg_t) | tmp
+PUB dhcp_msg(msg_t) | dl, tmp
 ' Construct a DHCP message, and transmit it
     tmp := 0
 
+    net.start_frame()
     ethii.new(@net._mac_local, @_mac_bcast, ETYP_IPV4)
     ip.new(ip.UDP, $00_00_00_00, BCAST_IP)
     udp.new(svc.BOOTP_C, svc.BOOTP_S)
@@ -184,16 +185,18 @@ PUB dhcp_msg(msg_t) | tmp
     bootp.dhcp_set_max_msg_len(net.MTU_MAX)
     bootp.dhcp_set_ip_lease_time(120)                ' 2min
     bootp.dhcp_set_msg_type(msg_t)
-    bootp.wr_dhcp_msg()
+    dl := bootp.wr_dhcp_msg()
 
     { update UDP header with length: UDP header + DHCP message }
+    udp.set_dgram_len(dl)
+    udp.set_chksum(0)
     tmp := net.fifo_wr_ptr()
     net.fifo_set_wr_ptr(udp.start_pos()+udp.UDP_DGRAMLEN)
-    net.wrword_msbf(udp.hdr_len() + bootp.dhcp_msg_len())
+    net.wrword_msbf(udp.dgram_len() )
     net.fifo_set_wr_ptr(tmp)
 
-    { update IP header with length and checksum }
-    ip.update_chksum(ip.hdr_len() + udp.hdr_len() + bootp.dhcp_msg_len())
+    { update IP header with datagram length and checksum }
+    ip.update_chksum(udp.hdr_len() + bootp.dhcp_msg_len())
     net.send_frame()
 
     _timer_set := (_dly + (math.rndi(2)-1)) <# 64 ' start counting down
@@ -228,7 +231,10 @@ PUB process_arp() | opcode
         { if we're currently bound to an IP, and the ARP request is for
             our IP, send a reply confirming we have it }
         if ( (_dhcp_state => BOUND) and (arp.target_proto_addr() == ip.my_ip()) )
+            net.start_frame()
+            ethii.reply()
             arp.reply()
+            net.send_frame()
             show_arp_msg(arp.opcode())
 
 
@@ -396,7 +402,7 @@ PUB setup()
  
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

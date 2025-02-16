@@ -4,8 +4,8 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Sep 10, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 16, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
@@ -138,9 +138,7 @@ PUB preset_fdx()
     set_max_frame_len(1518)
 
     set_b2b_inter_pkt_gap(18)
-
     hdx_loopback_ena(false)
-
     phy_loopback_ena(false)
     phy_powered(true)
     phy_full_duplex_ena(true)
@@ -1253,7 +1251,7 @@ PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
             spi.wr_byte(core.WR_CTRL | core.MIREGADR)
             spi.wr_byte(reg_nr.byte[REGNR])
             pinh(_CS)
-
+            waitus(11)
             pinl(_CS)
             spi.wr_byte(core.WR_CTRL | core.MICMD)
             spi.wr_byte(core.MIIRD_BITS)
@@ -1267,13 +1265,13 @@ PRI readreg(reg_nr, nr_bytes, ptr_buff) | i
             spi.wr_byte(core.WR_CTRL | core.MICMD)
             spi.wr_byte(0)
             pinh(_CS)
-
+            waitus(11)
             pinl(_CS)
             spi.wr_byte(core.RD_CTRL | core.MIRDL)
             spi.rd_byte()                       ' dummy read
             byte[ptr_buff][0] := spi.rd_byte()
             pinh(_CS)
-
+            waitus(11)
             pinl(_CS)
             spi.wr_byte(core.RD_CTRL | core.MIRDH)
             spi.rd_byte()
@@ -1309,6 +1307,7 @@ PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
                         spi.wr_byte(core.WR_CTRL | reg_nr.byte[REGNR]+i)
                         spi.wr_byte(byte[ptr_buff][i])
                         pinh(_CS)
+                        waitus(11)
                 other:
                     return
         PHY:                                    ' PHY regs
@@ -1317,12 +1316,12 @@ PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
             spi.wr_byte(core.WR_CTRL | core.MIREGADR)
             spi.wr_byte(reg_nr.byte[REGNR])
             pinh(_CS)
-
+            waitus(11)
             pinl(_CS)
             spi.wr_byte(core.WR_CTRL | core.MIWRL)
             spi.wr_byte(byte[ptr_buff][0])
             pinh(_CS)
-
+            waitus(11)
             pinl(_CS)
             spi.wr_byte(core.WR_CTRL | core.MIWRH)
             spi.wr_byte(byte[ptr_buff][1])
@@ -1336,7 +1335,7 @@ PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
