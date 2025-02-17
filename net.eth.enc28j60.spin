@@ -4,8 +4,8 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Sep 9, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 17, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
@@ -415,7 +415,7 @@ PUB full_duplex_ena(state=-2): curr_state
             return ((curr_state & 1) == 1)
 
 
-VAR word _nxtpkt, _rxlen
+VAR word _nxtpkt[3], _rxlen
 PUB get_frame() | rdptr
 ' Receive frame from ethernet device
     { get receive status vector }
@@ -1309,7 +1309,7 @@ PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

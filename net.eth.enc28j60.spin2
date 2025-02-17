@@ -4,7 +4,7 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Feb 16, 2025
+    Updated:        Feb 17, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -87,7 +87,6 @@ PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_HZ): status
             _CS := CS_PIN                       ' copy i/o pin to hub var
             pinh(_CS)
             _curr_bank := -1                    ' establish initial bank
-
             repeat until clk_ready()
             reset()
             waitms(30)
@@ -415,7 +414,7 @@ PUB full_duplex_ena(state=-2): curr_state
             return ((curr_state & 1) == 1)
 
 
-VAR word _nxtpkt, _rxlen
+VAR word _nxtpkt[3], _rxlen
 PUB get_frame() | rdptr
 ' Receive frame from ethernet device
     { get receive status vector }
