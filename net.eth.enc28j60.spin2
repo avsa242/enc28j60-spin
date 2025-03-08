@@ -885,6 +885,7 @@ PUB set_pkt_filter(mask)  'XXX tentative name and interface
     writereg(core.ERXFCON, 1, @mask)
 
 
+PUB rd_block = rdblk_lsbf                       ' Generally speaking, use this one
 PUB rdblk_lsbf(ptr_buff, len): ptr
 ' Read a block of data from the FIFO, LSByte-first
 '   len: number of bytes to read
@@ -905,18 +906,15 @@ PUB rdblk_msbf(ptr_buff, len): ptr | i
 
 PUB rd_byte(): b
 ' Read a byte of data from the FIFO
-    pinl(_CS)
-    spi.wr_byte(core.RD_BUFF)
-    b := spi.rd_byte()
-    pinh(_CS)
+    b := 0
+    rd_block(@b, 1)
 
 
+PUB rd_long = rdlong_lsbf
 PUB rdlong_lsbf(): l
 ' Read a long of data from the FIFO, LSByte-first
-    pinl(_CS)
-    spi.wr_byte(core.RD_BUFF)
-    l := spi.rdlong_lsbf()
-    pinh(_CS)
+    l := 0
+    rd_block(@l, 4)
 
 
 PUB rdlong_msbf(): l | i
@@ -928,12 +926,11 @@ PUB rdlong_msbf(): l | i
     pinh(_CS)
 
 
+PUB rd_word = rdword_lsbf
 PUB rdword_lsbf(): w
 ' Read a word of data from the FIFO, LSByte-first
-    pinl(_CS)
-    spi.wr_byte(core.RD_BUFF)
-    w := spi.rdword_lsbf()
-    pinh(_CS)
+    w := 0
+    rd_block(@w, 2)
 
 
 PUB rdword_msbf(): w
@@ -1092,6 +1089,7 @@ PUB tx_payload(ptr_buff, nr_bytes)
     pinh(_CS)
 
 
+PUB wr_block = wrblk_lsbf
 PUB wrblk_lsbf(ptr_buff, len): ptr
 ' Write a block of data to the FIFO, LSByte-first
 '   ptr_buff: pointer to buffer of data to copy from
@@ -1112,12 +1110,9 @@ PUB wrblk_msbf(ptr_buff, len): ptr
     pinh(_CS)
 
 
-PUB wr_byte(b): len
+PUB wr_byte(b): l
 ' Write a byte of data to the FIFO
-    pinl(_CS)
-    spi.wr_byte(core.WR_BUFF)
-    spi.wr_byte(b)
-    pinh(_CS)
+    wr_block(@b, 1)
     return 1
 
 
@@ -1132,12 +1127,10 @@ PUB wr_byte_x(b, nr_bytes): len
     return nr_bytes
 
 
-PUB wrlong_lsbf(l): len
+PUB wr_long = wrlong_lsbf
+PUB wrlong_lsbf(wl): l
 ' Write a long of data to the FIFO, LSByte-first
-    pinl(_CS)
-    spi.wr_byte(core.WR_BUFF)
-    spi.wrlong_lsbf(l)
-    pinh(_CS)
+    wr_block(@wl, 4)
     return 4
 
 
@@ -1150,12 +1143,10 @@ PUB wrlong_msbf(l): len | i
     return 4
 
 
-PUB wrword_lsbf(w): len
+PUB wr_word = wrword_lsbf
+PUB wrword_lsbf(w): l
 ' Write a word of data to the FIFO, LSByte-first
-    pinl(_CS)
-    spi.wr_byte(core.WR_BUFF)
-    spi.wrword_lsbf(w)
-    pinh(_CS)
+    wr_block(@w, 2)
     return 2
 
 
