@@ -20,6 +20,7 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 driver object for the ENC28J6
 * Flow control: TX, RX
 * Checksum offload
 * Demo code utilises [network-spin](https://github.com/avsa242/network-spin) - WIP Networking protocols objects
+* Support for supplying the ENC oscillator input with a clock
 
 
 ## Requirements
