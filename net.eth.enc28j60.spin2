@@ -4,7 +4,7 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Feb 17, 2025
+    Updated:        Mar 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -22,6 +22,8 @@ CON
     MOSI        = 2
     MISO        = 3
     SPI_FREQ    = 1_000_000
+    ENC_EXT_CLK = false                         ' optionally drive the ENC28J60's clock pin
+    OSC_PIN     = 4
 
 
     { frame_padding_mode() options }
@@ -67,6 +69,7 @@ OBJ
 
     spi:    "com.spi.25mhz"                       ' SPI engine
     core:   "core.con.enc28j60"                   ' hw-specific constants
+    sig:    "signal.synth"
 
 
 PUB null()
@@ -75,15 +78,29 @@ PUB null()
 
 PUB start(): status
 ' Start using default I/O settings
-    return startx(CS, SCK, MOSI, MISO, SPI_FREQ)
+    return startx(CS, SCK, MOSI, MISO, SPI_FREQ, ENC_EXT_CLK, OSC_PIN)
 
 
-PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_HZ): status
-' Start using custom IO pins
+PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_HZ, EXT_CLK=0, ENC_OSCPIN=0): status
+' Start using custom I/O settings
+'   CS_PIN:     SPI chip select
+'   SCK_PIN:    SPI Clock
+'   MOSI_PIN:   SPI Master-Out Slave-In
+'   MISO_PIN:   SPI Master-In Slave-Out
+'   SCK_HZ:     SPI bus clock speed
+'   EXT_CLK:    provide clock signal to ENC28J60 OSC pin (optional; boolean)
+'   ENC_OSCPIN: ENC28J60 oscillator input pin (optional; ignored if EXT_CLK == false)
+'   Returns:
+'       cogid+1 of SPI engine on success
+'       0 on failure
+
     if (    lookdown(CS_PIN: 0..63) and lookdown(SCK_PIN: 0..63) and ...
             lookdown(MOSI_PIN: 0..63) and lookdown(MISO_PIN: 0..63) )
         if ( status := spi.init(SCK_PIN, MOSI_PIN, MISO_PIN, core.SPI_MODE, SCK_HZ) )
-            waitms(core.T_POR)             ' wait for device startup
+            if ( EXT_CLK )
+            ' drive the clock/oscillator input pin of the ENC, if an external clock is requested
+                sig.square_wave_pin(ENC_OSCPIN, 25_000_000)
+            waitms(core.T_POR)                  ' wait for device startup
             _CS := CS_PIN                       ' copy i/o pin to hub var
             pinh(_CS)
             _curr_bank := -1                    ' establish initial bank
@@ -886,22 +903,24 @@ PUB set_pkt_filter(mask)  'XXX tentative name and interface
 
 
 PUB rd_block = rdblk_lsbf                       ' Generally speaking, use this one
-PUB rdblk_lsbf(ptr_buff, len): ptr
+PUB rdblk_lsbf(p_buff, l): p
 ' Read a block of data from the FIFO, LSByte-first
 '   len: number of bytes to read
     pinl(_CS)
     spi.wr_byte(core.RD_BUFF)
-    spi.rdblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
+    spi.rdblock_lsbf(p_buff, 1 #> l <# FIFO_MAX)
     pinh(_CS)
+    return l
 
 
-PUB rdblk_msbf(ptr_buff, len): ptr | i
+PUB rdblk_msbf(p_buff, l): p
 ' Read a block of data from the FIFO, MSByte-first
 '   len: number of bytes to read
     pinl(_CS)
     spi.wr_byte(core.RD_BUFF)
-    spi.rdblock_msbf(ptr_buff, len)
+    spi.rdblock_msbf(p_buff, 1 #> l <# FIFO_MAX)
     pinh(_CS)
+    return l
 
 
 PUB rd_byte(): b
@@ -917,13 +936,10 @@ PUB rdlong_lsbf(): l
     rd_block(@l, 4)
 
 
-PUB rdlong_msbf(): l | i
+PUB rdlong_msbf(): l
 ' Read a long of data from the FIFO, MSByte-first
-    pinl(_CS)
-    spi.wr_byte(core.RD_BUFF)
-    repeat i from 3 to 0
-        l.byte[i] := spi.rd_byte()
-    pinh(_CS)
+    l := 0
+    rdblk_msbf(@l, 4)
 
 
 PUB rd_word = rdword_lsbf
@@ -935,10 +951,8 @@ PUB rdword_lsbf(): w
 
 PUB rdword_msbf(): w
 ' Read a word of data from the FIFO, MSByte-first
-    pinl(_CS)
-    spi.wr_byte(core.RD_BUFF)
-    w := spi.rdword_msbf()
-    pinh(_CS)
+    w := 0
+    rdblk_msbf(@w, 2)
 
 
 PUB reset()
@@ -1116,7 +1130,7 @@ PUB wr_byte(b): l
     return 1
 
 
-PUB wr_byte_x(b, nr_bytes): len
+PUB wr_byte_x(b, nr_bytes): l
 ' Repeatedly write a byte to the FIFO
 '   b: byte to write
 '   nr_bytes: number of times to write byte to the FIFO
@@ -1134,12 +1148,9 @@ PUB wrlong_lsbf(wl): l
     return 4
 
 
-PUB wrlong_msbf(l): len | i
+PUB wrlong_msbf(wl): l
 ' Write a long of data to the FIFO, MSByte-first
-    pinl(_CS)
-    spi.wr_byte(core.WR_BUFF)
-    spi.wrlong_msbf(l)
-    pinh(_CS)
+    wrblock_msbf(@wl, 4)
     return 4
 
 
@@ -1150,12 +1161,9 @@ PUB wrword_lsbf(w): l
     return 2
 
 
-PUB wrword_msbf(w): len
+PUB wrword_msbf(w): l
 ' Write a word of data to the FIFO, MSByte-first
-    pinl(_CS)
-    spi.wr_byte(core.WR_BUFF)
-    spi.wrword_msbf(w)
-    pinh(_CS)
+    wrblock_msbf(@w, 2)
     return 2
 
 

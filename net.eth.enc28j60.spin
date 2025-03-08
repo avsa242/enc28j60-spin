@@ -4,7 +4,7 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Feb 17, 2025
+    Updated:        Mar 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -22,6 +22,8 @@ CON
     MOSI        = 2
     MISO        = 3
     SPI_FREQ    = 1_000_000                     ' unused
+    ENC_EXT_CLK = false                         ' optionally drive the ENC28J60's clock pin
+    OSC_PIN     = 4
 
 
     { frame_padding_mode() options }
@@ -66,6 +68,7 @@ OBJ
     spi:    "com.spi.20mhz.cs"                    ' SPI engine
     core:   "core.con.enc28j60"                   ' hw-specific constants
     time:   "time"                                ' Basic timing functions
+    sig:    "signal.synth"
 
 
 PUB null()
@@ -74,18 +77,29 @@ PUB null()
 
 PUB start(): status
 ' Start using default I/O settings
-    return startx(CS, SCK, MOSI, MISO)
+    return startx(CS, SCK, MOSI, MISO, ENC_EXT_CLK, OSC_PIN)
 
 
-PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN): status
-' Start using custom IO pins
+PUB startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, EXT_CLK=0, ENC_OSCPIN=0): status
+' Start using custom I/O settings
+'   CS_PIN:     SPI chip select
+'   SCK_PIN:    SPI Clock
+'   MOSI_PIN:   SPI Master-Out Slave-In
+'   MISO_PIN:   SPI Master-In Slave-Out
+'   EXT_CLK:    provide clock signal to ENC28J60 OSC pin (optional; boolean)
+'   ENC_OSCPIN: ENC28J60 oscillator input pin (optional; ignored if EXT_CLK == false)
+'   Returns:
+'       cogid+1 of SPI engine on success
+'       0 on failure
     if (    lookdown(CS_PIN: 0..31) and lookdown(SCK_PIN: 0..31) and ...
             lookdown(MOSI_PIN: 0..31) and lookdown(MISO_PIN: 0..31) )
         spi.set_slave(CS_PIN)
         if ( status := spi.init(SCK_PIN, MOSI_PIN, MISO_PIN, core.SPI_MODE) )
             time.msleep(core.T_POR)             ' wait for device startup
             _curr_bank := -1                    ' establish initial bank
-
+            if ( EXT_CLK )
+            ' drive the clock/oscillator input pin of the ENC, if an external clock is requested
+                sig.init("A", ENC_OSCPIN, 25_000_000)
             repeat until clk_ready()
             reset()
             time.msleep(30)
@@ -136,9 +150,7 @@ PUB preset_fdx()
     set_max_frame_len(1518)
 
     set_b2b_inter_pkt_gap(18)
-
     hdx_loopback_ena(false)
-
     phy_loopback_ena(false)
     phy_powered(true)
     phy_full_duplex_ena(true)
@@ -886,59 +898,55 @@ PUB set_pkt_filter(mask)  'XXX tentative name and interface
     writereg(core.ERXFCON, 1, @mask)
 
 
-PUB rdblk_lsbf(ptr_buff, len): ptr
+PUB rd_block = rdblk_lsbf                       ' Generally speaking, use this one
+PUB rdblk_lsbf(p_buff, l): p
 ' Read a block of data from the FIFO, LSByte-first
 '   len: number of bytes to read
     spi.wr_byte(core.RD_BUFF)
-    spi.rdblock_lsbf(ptr_buff, 1 #> len <# FIFO_MAX)
+    spi.rdblock_lsbf(p_buff, 1 #> l <# FIFO_MAX)
     spi.deselect()
+    return l
 
 
-PUB rdblk_msbf(ptr_buff, len): ptr | i
-
+PUB rdblk_msbf(p_buff, l): p
 ' Read a block of data from the FIFO, MSByte-first
 '   len: number of bytes to read
     spi.wr_byte(core.RD_BUFF)
-    repeat i from (1 #> len <# FIFO_MAX)-1 to 0
-        byte[ptr_buff][i] := spi.rd_byte()
+    spi.rdblock_msbf(p_buff, 1 #> l <# FIFO_MAX)
     spi.deselect()
+    return l
 
 
 PUB rd_byte(): b
 ' Read a byte of data from the FIFO
-    spi.wr_byte(core.RD_BUFF)
-    b := spi.rd_byte()
-    spi.deselect()
+    b := 0
+    rd_block(@b, 1)
 
 
+PUB rd_long = rdlong_lsbf
 PUB rdlong_lsbf(): l
 ' Read a long of data from the FIFO, LSByte-first
-    spi.wr_byte(core.RD_BUFF)
-    l := spi.rdlong_lsbf()
-    spi.deselect()
+    l := 0
+    rd_block(@l, 4)
 
 
-PUB rdlong_msbf(): l | i
+PUB rdlong_msbf(): l
 ' Read a long of data from the FIFO, MSByte-first
-    spi.wr_byte(core.RD_BUFF)
-    repeat i from 3 to 0
-        l.byte[i] := spi.rd_byte()
-    spi.deselect()
+    l := 0
+    rdblk_msbf(@l, 4)
 
 
+PUB rd_word = rdword_lsbf
 PUB rdword_lsbf(): w
 ' Read a word of data from the FIFO, LSByte-first
-    spi.wr_byte(core.RD_BUFF)
-    w := spi.rdword_lsbf()
-    spi.deselect()
+    w := 0
+    rd_block(@w, 2)
 
 
 PUB rdword_msbf(): w
 ' Read a word of data from the FIFO, MSByte-first
-    spi.wr_byte(core.RD_BUFF)
-    w.byte[1] := spi.rd_byte()
-    w.byte[0] := spi.rd_byte()
-    spi.deselect()
+    w := 0
+    rdblk_msbf(@w, 2)
 
 
 PUB reset()
@@ -1087,6 +1095,7 @@ PUB tx_payload(ptr_buff, nr_bytes)
     spi.deselect()
 
 
+PUB wr_block = wrblk_lsbf
 PUB wrblk_lsbf(ptr_buff, len): ptr
 ' Write a block of data to the FIFO, LSByte-first
 '   ptr_buff: pointer to buffer of data to copy from
@@ -1096,66 +1105,54 @@ PUB wrblk_lsbf(ptr_buff, len): ptr
     spi.deselect()
 
 
-PUB wrblk_msbf(ptr_buff, len): ptr | i
+PUB wrblk_msbf(ptr_buff, len): ptr
 ' Write a block of data to the FIFO, MSByte-first
 '   ptr_buff: pointer to buffer of data to copy from
 '   len: number of bytes to write
     spi.wr_byte(core.WR_BUFF)
-    repeat i from len-1 to 0
-        spi.wr_byte(byte[ptr_buff][i])
+    spi.wrblock_msbf(ptr_buff, 1 #> len <# FIFO_MAX)
     spi.deselect()
 
 
-PUB wr_byte(b): len
+PUB wr_byte(b): l
 ' Write a byte of data to the FIFO
-    spi.wr_byte(core.WR_BUFF)
-    spi.wr_byte(b)
-    spi.deselect()
+    wr_block(@b, 1)
     return 1
 
 
-PUB wr_byte_x(b, nr_bytes): len
+PUB wr_byte_x(b, nr_bytes): l
 ' Repeatedly write a byte to the FIFO
 '   b: byte to write
 '   nr_bytes: number of times to write byte to the FIFO
     spi.wr_byte(core.WR_BUFF)
-    repeat nr_bytes
-        spi.wr_byte(b)
+    spi.wr_bytex(b, nr_bytes)
     spi.deselect()
     return nr_bytes
 
 
-PUB wrlong_lsbf(l): len
+PUB wr_long = wrlong_lsbf
+PUB wrlong_lsbf(wl): l
 ' Write a long of data to the FIFO, LSByte-first
-    spi.wr_byte(core.WR_BUFF)
-    spi.wrlong_lsbf(l)
-    spi.deselect()
+    wr_block(@wl, 4)
     return 4
 
 
-PUB wrlong_msbf(l): len | i
+PUB wrlong_msbf(wl): l
 ' Write a long of data to the FIFO, MSByte-first
-    spi.wr_byte(core.WR_BUFF)
-    repeat i from 3 to 0
-        spi.wr_byte(l.byte[i])
-    spi.deselect()
+    wrblock_msbf(@wl, 4)
     return 4
 
 
-PUB wrword_lsbf(w): len
+PUB wr_word = wrword_lsbf
+PUB wrword_lsbf(w): l
 ' Write a word of data to the FIFO, LSByte-first
-    spi.wr_byte(core.WR_BUFF)
-    spi.wrword_lsbf(w)
-    spi.deselect()
+    wr_block(@w, 2)
     return 2
 
 
-PUB wrword_msbf(w): len
+PUB wrword_msbf(w): l
 ' Write a word of data to the FIFO, MSByte-first
-    spi.wr_byte(core.WR_BUFF)
-    spi.wr_byte(w.byte[1])
-    spi.wr_byte(w.byte[0])
-    spi.deselect()
+    wrblock_msbf(@w, 2)
     return 2
 
 
