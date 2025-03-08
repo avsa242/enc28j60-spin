@@ -1139,7 +1139,7 @@ PUB wrlong_lsbf(wl): l
 
 PUB wrlong_msbf(wl): l
 ' Write a long of data to the FIFO, MSByte-first
-    wrblock_msbf(@wl, 4)
+    wrblk_msbf(@wl, 4)
     return 4
 
 
@@ -1152,7 +1152,7 @@ PUB wrword_lsbf(w): l
 
 PUB wrword_msbf(w): l
 ' Write a word of data to the FIFO, MSByte-first
-    wrblock_msbf(@w, 2)
+    wrblk_msbf(@w, 2)
     return 2
 
 
