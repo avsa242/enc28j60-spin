@@ -4,7 +4,7 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Mar 8, 2025
+    Updated:        Mar 15, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -427,15 +427,16 @@ PUB full_duplex_ena(state=-2): curr_state
             return ((curr_state & 1) == 1)
 
 
-VAR word _nxtpkt[3], _rxlen
+VAR word _nxtpkt, _rxlen, _rcv_status
 PUB get_frame() | rdptr
 ' Receive frame from ethernet device
-    { get receive status vector }
+'   Returns: number of bytes received (not including the 4-byte receive status vector)
+    ' get receive status vector
     fifo_set_rd_ptr(_nxtpkt)
     rx_payload(@_nxtpkt, 6)
 
     if ( _rxlen =< MTU_MAX )
-        { ERRATA: read pointer start must be odd; subtract 1 }
+        ' ERRATA: read pointer start must be odd; subtract 1
         rdptr := _nxtpkt-1
 
         if ((rdptr < RXSTART) or (rdptr > RXSTOP))
@@ -444,6 +445,8 @@ PUB get_frame() | rdptr
         pkt_dec()
 
         fifo_set_rx_rd_ptr(rdptr)
+
+    return _rxlen-4
 
 
 PUB get_node_address(ptr_addr)
