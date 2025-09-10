@@ -4,7 +4,7 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Mar 15, 2025
+    Updated:        Sep 10, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -428,7 +428,7 @@ PUB full_duplex_ena(state=-2): curr_state
 
 
 VAR word _nxtpkt, _rxlen, _rcv_status
-PUB get_frame() | rdptr
+PUB get_frame(): l | rdptr
 ' Receive frame from ethernet device
 '   Returns: number of bytes received (not including the 4-byte receive status vector)
     ' get receive status vector
@@ -449,16 +449,21 @@ PUB get_frame() | rdptr
     return _rxlen-4
 
 
-PUB get_node_address(ptr_addr)
+PUB my_mac = get_node_address
+PUB get_node_address(p_addr=0): p
 ' Get this node's currently set MAC address
-'   NOTE: Buffer pointed to by ptr_addr must be 6 bytes long
-    readreg(core.MAADR1, 1, @_mac_local+5)         '
-    readreg(core.MAADR2, 1, @_mac_local+4)         ' OUI
-    readreg(core.MAADR3, 1, @_mac_local+3)         '
-    readreg(core.MAADR4, 1, @_mac_local+2)
-    readreg(core.MAADR5, 1, @_mac_local+1)
-    readreg(core.MAADR6, 1, @_mac_local)
-    bytemove(ptr_addr, @_mac_local, 6)
+'   NOTE: Buffer pointed to by p_addr must be 6 bytes long
+    readreg(core.MAADR1, 1, @_mac_local+0)         '
+    readreg(core.MAADR2, 1, @_mac_local+1)         ' OUI
+    readreg(core.MAADR3, 1, @_mac_local+2)         '
+    readreg(core.MAADR4, 1, @_mac_local+3)
+    readreg(core.MAADR5, 1, @_mac_local+4)
+    readreg(core.MAADR6, 1, @_mac_local+5)
+
+    if ( p_addr )
+        bytemove(p_addr, @_mac_local, 6)
+
+    return @_mac_local
 
 
 PUB hdx_loopback_ena(state=-2): curr_state
@@ -629,12 +634,6 @@ PUB max_frame_len(): curr_len
     readreg(core.MAMXFLL, 2, @curr_len)
 
 
-PUB my_mac(): p
-' Get a pointer to this node's MAC address
-    get_node_address(@_mac_local)
-    return @_mac_local
-
-
 PUB set_max_frame_len(len)
 ' Set maximum frame length
 '   Valid values: 0..65535 (clamped to range)
@@ -656,16 +655,18 @@ PUB set_max_retransmits(max_nr)
     writereg(core.MACLCON1, 1, @max_nr)
 
 
+PUB set_mac_address = node_address
 PUB node_address(ptr_addr)
 ' Set this node's MAC address
 '   Valid values: pointer to 6-byte MAC address (OUI in MSB)
-    bytemove(@_mac_local, ptr_addr, MACADDR_LEN)
-    writereg(core.MAADR1, 1, ptr_addr+5)        '
-    writereg(core.MAADR2, 1, ptr_addr+4)        ' OUI
-    writereg(core.MAADR3, 1, ptr_addr+3)        '
-    writereg(core.MAADR4, 1, ptr_addr+2)
-    writereg(core.MAADR5, 1, ptr_addr+1)
-    writereg(core.MAADR6, 1, ptr_addr)
+    rx_enabled(false)
+    writereg(core.MAADR1, 1, ptr_addr+0)        '
+    writereg(core.MAADR2, 1, ptr_addr+1)        ' OUI
+    writereg(core.MAADR3, 1, ptr_addr+2)        '
+    writereg(core.MAADR4, 1, ptr_addr+3)
+    writereg(core.MAADR5, 1, ptr_addr+4)
+    writereg(core.MAADR6, 1, ptr_addr+5)
+    rx_enabled(true)
 
 
 PUB phy_full_duplex_ena(state=-2): curr_state    'XXX tentatively named
@@ -897,8 +898,10 @@ PUB set_pkt_filter(mask)  'XXX tentative name and interface
 '       if and/or == 0
 '           1: packets accepted if the dest addr is FF:FF:FF:FF:FF:FF
 '           0: filter disabled
+    rx_enabled(false)
     mask &= $ff
     writereg(core.ERXFCON, 1, @mask)
+    rx_enabled(true)
 
 
 PUB rd_block = rdblk_lsbf                       ' Generally speaking, use this one
@@ -1013,11 +1016,17 @@ PUB rx_payload(ptr_buff, nr_bytes)
     spi.deselect()
 
 
-PUB send_frame()
+PUB send_frame(len=0)
 ' Send assembled ethernet frame
+'   len:    length of data to send (optional; defaults to current TX FIFO write position-START)
     { point to assembled ethernet frame and send it }
     fifo_set_tx_start(TXSTART)                  ' ETXSTL: TXSTART
-    fifo_set_tx_end(fifo_wr_ptr())              ' ETXNDL: TXSTART+len
+
+    if ( len > 0 )
+        fifo_set_tx_end(len)                    ' ETXNDL: len
+    else
+        fifo_set_tx_end( fifo_wr_ptr() )        ' ETXNDL: current fifo write position
+
     tx_enabled(true)                            ' send
 
 
