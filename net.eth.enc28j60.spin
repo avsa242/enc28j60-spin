@@ -4,7 +4,7 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Sep 10, 2025
+    Updated:        Sep 11, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -851,6 +851,25 @@ PUB pkt_filter(): fmask
 ' Get current packet filter mask
     fmask := 0
     readreg(core.ERXFCON, 1, @fmask)
+
+
+con
+
+    ' set_pkt_filter() filters
+    PF_PROMISCUOUS          = 0                 ' promiscuous mode: accept all valid packets,
+                                                '   including those with destination address
+                                                '   not matching the local MAC address
+    PF_MY_UNICAST_ACCEPT    = 1 << 7            ' accept packets if destination address matches
+                                                '   the local MAC address
+    PF_AND_OR               = 1 << 6
+    PF_BADCRC_REJECT        = 1 << 5            ' reject packets if the CRC is invalid
+    PF_PATTERN_ACCEPT       = 1 << 4            ' accept packets if pattern matches
+    PF_MAGICPKT_ACCEPT      = 1 << 3            ' accept packets containing magic packet pattern
+    PF_HASHTBL_ACCEPT       = 1 << 2            ' accept packets w/dest addr matching hash table
+    PF_MCAST_ACCEPT         = 1 << 1            ' accept packets if destination is multicast
+                                                '   (01:00:5e:xx:xx:xx)
+    PF_BCAST_ACCEPT         = 1 << 0            ' accept packets if destination is broadcast
+                                                '   (ff:ff:ff:ff:ff:ff)
 
 
 PUB set_pkt_filter(mask)  'XXX tentative name and interface
