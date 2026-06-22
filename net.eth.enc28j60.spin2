@@ -4,8 +4,8 @@
     Description:    Driver for the ENC28J60 Ethernet Transceiver
     Author:         Jesse Burt
     Started:        Feb 21, 2022
-    Updated:        Sep 11, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Jun 22, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
@@ -1056,7 +1056,7 @@ PUB send_frame(len=0)
     tx_enabled(true)                            ' send
 
 
-PUB start_frame()
+PUB start_frame(o=0)
 ' Start a new Ethernet frame
     fifo_set_wr_ptr(TXSTART)
     wr_byte($00)                                ' per-frame control byte
@@ -1364,7 +1364,7 @@ PRI writereg(reg_nr, nr_bytes, ptr_buff) | i
 
 DAT
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
